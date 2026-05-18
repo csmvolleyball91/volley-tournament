@@ -510,6 +510,10 @@ function saveLocalCompletedTime(id, iso) {
   try { localStorage.setItem(completedTimeKey(id), iso); } catch(e) {}
 }
 
+function clearLocalCompletedTime(id) {
+  try { localStorage.removeItem(completedTimeKey(id)); } catch(e) {}
+}
+
 function getCompletionIso(m) {
   return m.completed_at || m.finished_at || m.done_at || m.completed_time || m.updated_at || localStorage.getItem(completedTimeKey(m.id)) || '';
 }
@@ -862,6 +866,7 @@ function renderAdmin() {
       `<button onclick="rebalanceRefereesForBrassages()">Rééquilibrer arbitres brassages</button>`;
   }
   renderAdminForfeit();
+  renderAdminMatchReset();
   renderAdminScoreCorrections();
 }
 
@@ -969,6 +974,79 @@ async function adminApplyForfeit() {
 
   saveLocalCompletedTime(m.id, completedAt);
   document.getElementById('adminMsg').innerText = 'Forfait appliqué ✅';
+  await loadData();
+}
+
+
+function renderAdminMatchReset() {
+  const div = document.getElementById('resetMatchAdmin');
+  if (!div || !adminUnlocked) return;
+
+  const eligible = matches
+    .filter(m => m.team_a && m.team_b && m.team_a !== 'À définir' && m.team_b !== 'À définir')
+    .sort((a,b) =>
+      String(a.phase || '').localeCompare(String(b.phase || '')) ||
+      Number(a.court || 999) - Number(b.court || 999) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  if (!eligible.length) {
+    div.innerHTML = '<div class="card">Aucun match disponible à réinitialiser.</div>';
+    return;
+  }
+
+  div.innerHTML = `
+    <div class="forfeit-admin-grid">
+      <label><span>Match à reset</span>
+        <select id="resetMatchSelect">
+          ${eligible.map(m => `<option value="${m.id}">${m.phase || '-'} · T${m.court || '-'} · ${m.team_a} vs ${m.team_b} · ${m.status || 'pending'} ${m.score_a != null || m.score_b != null ? `(${m.score_a == null ? 0 : m.score_a}-${m.score_b == null ? 0 : m.score_b})` : ''}</option>`).join('')}
+        </select>
+      </label>
+      <button class="danger" onclick="adminResetMatch()">Reset ce match</button>
+    </div>
+  `;
+}
+
+async function adminResetMatch() {
+  if (!adminUnlocked) return;
+  const select = document.getElementById('resetMatchSelect');
+  if (!select) return;
+  const m = matches.find(x => String(x.id) === String(select.value));
+  if (!m) return;
+
+  if (!confirm(`Reset match ?\n${m.phase || '-'} · Terrain ${m.court || '-'}\n${m.team_a} vs ${m.team_b}\n\nLe score sera remis à 0-0 et le match redeviendra à jouer.`)) return;
+
+  const fullPayload = {
+    score_a: 0,
+    score_b: 0,
+    winner: null,
+    status: 'pending',
+    started_at: null,
+    completed_at: null
+  };
+
+  let result = await client.from('matches').update(fullPayload).eq('id', m.id);
+  if (result.error) {
+    result = await client.from('matches').update({
+      score_a: 0,
+      score_b: 0,
+      winner: null,
+      status: 'pending'
+    }).eq('id', m.id);
+  }
+
+  if (result.error) {
+    alert('Erreur reset match : ' + result.error.message);
+    return;
+  }
+
+  clearLocalCompletedTime(m.id);
+  if (activeScoreMatchId === m.id) activeScoreMatchId = null;
+  delete matchEditCodes[m.id];
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = 'Match réinitialisé ✅';
   await loadData();
 }
 
