@@ -804,6 +804,7 @@ function unlockAdminCode(code) {
     const panel = document.getElementById('adminPanel');
     const msg = document.getElementById('adminMsg');
     if (panel) panel.classList.remove('hidden');
+    ensureAdminPriorityTools();
     if (msg) msg.innerText = 'Admin déverrouillé ✅';
     renderAdmin();
     renderBrackets();
@@ -817,7 +818,41 @@ function unlockAdmin() {
   requestAdminAccess();
 }
 
+
+function ensureAdminPriorityTools() {
+  const panel = document.getElementById('adminPanel');
+  if (!panel) return;
+  if (document.getElementById('forfeitAdmin') && document.getElementById('resetMatchAdmin')) return;
+  const toolsHtml = `
+    <div class="admin-priority-tools admin-priority-tools-forced">
+      <article class="admin-card admin-card-wide admin-tool-forfeit">
+        <div class="admin-card-head">
+          <div>
+            <p class="eyebrow dark">Action rapide</p>
+            <h3>Forfait avec score choisi</h3>
+          </div>
+          <span class="admin-action-badge danger-badge">Forfait</span>
+        </div>
+        <p class="small">Choisis le match, le vainqueur et le score à appliquer. Le match sera marqué comme terminé.</p>
+        <div id="forfeitAdmin" class="admin-list-panel"></div>
+      </article>
+      <article class="admin-card admin-card-wide admin-tool-reset">
+        <div class="admin-card-head">
+          <div>
+            <p class="eyebrow dark">Action rapide</p>
+            <h3>Reset match admin</h3>
+          </div>
+          <span class="admin-action-badge reset-badge">Reset</span>
+        </div>
+        <p class="small">Remet un match à 0-0, le déverrouille et le replace dans les matchs à jouer.</p>
+        <div id="resetMatchAdmin" class="admin-list-panel"></div>
+      </article>
+    </div>`;
+  panel.insertAdjacentHTML('afterbegin', toolsHtml);
+}
+
 function renderAdmin() {
+  ensureAdminPriorityTools();
   if (!settings) return;
   document.getElementById('cfgStart').value = settings.start_time || '09:30';
   document.getElementById('cfgDuration').value = settings.match_duration || 12;
