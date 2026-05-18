@@ -586,3 +586,171 @@ th {
   .team-title { font-size: 10vw; }
   .score-access { position: sticky; top:0; z-index:10; background:white; padding:6px; }
 }
+
+/* V14 — Branding CSM Volleyball 91 */
+:root {
+  --bg: #f5f8ff;
+  --card: #ffffff;
+  --text: #0a1f44;
+  --muted: #5f6f89;
+  --border: #dce7f8;
+  --primary: #045fd3;
+  --primary-dark: #0047a6;
+  --club-blue: #075fc7;
+  --club-blue-dark: #003b88;
+  --club-yellow: #ffc400;
+  --club-yellow-dark: #e2a900;
+  --success: #07985f;
+  --warning: #e2a900;
+  --danger: #e32929;
+  --dark: #07162f;
+  --shadow: 0 16px 35px rgba(0, 61, 136, 0.12);
+}
+
+body {
+  font-family: Inter, Arial, sans-serif;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(255,196,0,.28), transparent 22%),
+    radial-gradient(circle at 92% 8%, rgba(7,95,199,.22), transparent 30%),
+    linear-gradient(180deg, #eef5ff 0%, #f7faff 48%, #ffffff 100%);
+}
+
+.club-hero {
+  background:
+    linear-gradient(135deg, rgba(0,59,136,.96) 0%, rgba(7,95,199,.95) 58%, rgba(255,196,0,.92) 100%);
+  border: 1px solid rgba(255,255,255,.32);
+  position: relative;
+  overflow: hidden;
+}
+
+.club-hero::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -90px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  border: 30px solid rgba(255,255,255,.13);
+}
+
+.brand-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.club-logo {
+  width: min(245px, 38vw);
+  max-height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 16px rgba(0,0,0,.18));
+}
+
+.club-hero h1 { text-transform: uppercase; letter-spacing: .02em; }
+.club-hero .eyebrow { color: rgba(255,255,255,.86); }
+.live-pill {
+  background: rgba(255,196,0,.96);
+  border: 1px solid rgba(255,255,255,.55);
+  color: #063a82;
+  box-shadow: 0 10px 20px rgba(0,0,0,.12);
+  z-index: 1;
+}
+
+.nav-grid button {
+  background: linear-gradient(135deg, var(--club-blue), var(--club-blue-dark));
+  border-bottom: 4px solid var(--club-yellow);
+}
+
+button {
+  background: linear-gradient(135deg, var(--club-blue), var(--primary-dark));
+}
+button:hover { background: linear-gradient(135deg, var(--primary-dark), #002e70); }
+button.secondary { background: #607089; }
+button.win { background: linear-gradient(135deg, var(--success), #057246); }
+button.danger { background: linear-gradient(135deg, #f03b3b, #bd1111); }
+
+.section {
+  border-top: 5px solid var(--club-yellow);
+}
+
+.card, table {
+  border-color: #d7e6fb;
+}
+th {
+  background: linear-gradient(180deg, #f5f9ff, #eaf2ff);
+  color: #06489d;
+}
+
+.bracket-title {
+  background: #fff4bd;
+  color: #06489d;
+  border: 1px solid rgba(255,196,0,.6);
+}
+
+.score-access {
+  border-radius: 18px;
+  background: rgba(255,255,255,.9);
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+
+.scoreboard-full {
+  border: 4px solid white;
+  box-shadow: 0 20px 55px rgba(0, 61, 136, .2);
+}
+.score-half.team-a {
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255,255,255,.18), transparent 22%),
+    linear-gradient(160deg, #0076e6 0%, #064fb3 100%);
+}
+.score-half.team-b {
+  background:
+    radial-gradient(circle at 70% 25%, rgba(255,255,255,.14), transparent 23%),
+    linear-gradient(160deg, #ffc400 0%, #f39c12 100%);
+  color: #07336f;
+}
+.team-title {
+  text-transform: uppercase;
+  text-shadow: 0 5px 16px rgba(0,0,0,.18);
+}
+.team-b .team-title, .team-b .mega-score { text-shadow: none; }
+.mega-score {
+  letter-spacing: -.06em;
+  text-shadow: 0 10px 24px rgba(0,0,0,.16);
+}
+.score-action {
+  background: rgba(255,255,255,.92);
+  color: #06489d;
+  box-shadow: 0 12px 24px rgba(0,0,0,.16);
+}
+.score-action:hover { background: white; color: #003b88; }
+.reset-btn {
+  background: white;
+  color: #06489d;
+  border: 5px solid var(--club-yellow);
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+}
+.mini-meta {
+  color: #06489d;
+  border: 2px solid rgba(255,196,0,.8);
+}
+.finish-btn {
+  border: 2px solid white;
+}
+
+@media (max-width: 768px) {
+  .scoreboard-full { border: 0; }
+  .score-access {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .brand-row { gap: 10px; }
+  .club-logo { width: 160px; max-height: 70px; }
+}
