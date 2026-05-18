@@ -3,18 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tournoi Volley Live</title>
+  <title>Tournoi CSM Volleyball 91</title>
+  <link rel="icon" href="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <p class="eyebrow">CSM Volley</p>
-      <h1>🏐 Tournoi Live</h1>
-      <p class="small" id="subtitle">Chargement...</p>
+  <header class="hero club-hero">
+    <div class="brand-row">
+      <img class="club-logo" src="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png" alt="Club Sportif Mennecy Volley-Ball" />
+      <div>
+        <p class="eyebrow">Club Sportif Mennecy Volley-Ball</p>
+        <h1>Tournoi Live</h1>
+        <p class="small" id="subtitle">Chargement...</p>
+      </div>
     </div>
-    <div class="live-pill">LIVE</div>
+    <div class="live-pill">LIVE CSM</div>
   </header>
 
   <div class="grid nav-grid">
@@ -104,8 +108,8 @@
       <div id="teamsAdmin"></div>
       <button onclick="saveTeams()">Sauvegarder noms équipes</button>
 
-      <h3>Codes matchs</h3>
-      <p class="small">Codes visibles seulement en admin. Tu peux les communiquer aux équipes arbitres.</p>
+      <h3>Codes arbitres</h3>
+      <p class="small">Codes fixes par équipe, visibles seulement en admin. Tu peux les modifier ici.</p>
       <div id="codesAdmin"></div>
     </div>
 
