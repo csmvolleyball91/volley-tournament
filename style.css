@@ -1,74 +1,311 @@
+:root {
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #1d4ed8;
+  --primary-dark: #1e40af;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --dark: #111827;
+  --shadow: 0 10px 25px rgba(17, 24, 39, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   font-family: Arial, sans-serif;
-  background: #fafafa;
-  max-width: 980px;
+  background:
+    radial-gradient(circle at top left, rgba(29, 78, 216, 0.16), transparent 32%),
+    linear-gradient(180deg, #eef2ff 0%, var(--bg) 42%, #ffffff 100%);
+  color: var(--text);
+  max-width: 1040px;
   margin: auto;
   padding: 16px;
 }
-h1 { font-size: 25px; margin-bottom: 4px; }
-h2 { font-size: 21px; margin-top: 22px; }
-h3 { margin-top: 22px; }
-label { font-size: 14px; color: #444; display: block; margin-top: 8px; }
-.small { color: #666; font-size: 14px; }
-.hidden { display: none; }
+
+.hero {
+  background: linear-gradient(135deg, #111827 0%, #1d4ed8 58%, #0f766e 100%);
+  color: white;
+  border-radius: 22px;
+  padding: 22px;
+  margin: 8px 0 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 32px;
+  margin: 0 0 6px;
+  line-height: 1.05;
+}
+
+h2 {
+  font-size: 23px;
+  margin: 24px 0 12px;
+}
+
+h3 {
+  margin: 22px 0 10px;
+  font-size: 18px;
+}
+
+label {
+  font-size: 14px;
+  color: #374151;
+  display: block;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.small {
+  color: rgba(255,255,255,0.82);
+  font-size: 14px;
+  margin: 0;
+}
+
+.section .small,
+.card .small,
+#admin .small {
+  color: var(--muted);
+}
+
+.live-pill {
+  background: rgba(255,255,255,0.16);
+  border: 1px solid rgba(255,255,255,0.28);
+  color: white;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+.hidden {
+  display: none;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
   margin: 14px 0;
 }
+
+.nav-grid {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 8px 0;
+  backdrop-filter: blur(8px);
+}
+
 button, select, input {
   width: 100%;
-  box-sizing: border-box;
   font-size: 17px;
-  padding: 12px;
+  padding: 13px 14px;
   margin: 6px 0;
-  border-radius: 9px;
-  border: 1px solid #bbb;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: white;
+  outline: none;
 }
+
+input:focus, select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.12);
+}
+
 button {
-  background: #111;
+  background: var(--primary);
   color: white;
   border: none;
-  font-weight: bold;
+  font-weight: 800;
+  box-shadow: 0 6px 14px rgba(29, 78, 216, 0.18);
+  cursor: pointer;
 }
-button.secondary { background: #444; }
-button.win { background: #0f766e; }
-button.danger { background: #b91c1c; }
+
+button:hover {
+  background: var(--primary-dark);
+}
+
+button.secondary {
+  background: #4b5563;
+  box-shadow: none;
+}
+
+button.win {
+  background: var(--success);
+}
+
+button.danger {
+  background: var(--danger);
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.18);
+}
+
+.section {
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(229,231,235,0.8);
+  border-radius: 22px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
 .card {
-  background: white;
-  border: 1px solid #ddd;
-  padding: 13px;
-  border-radius: 12px;
-  margin: 9px 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 15px;
+  border-radius: 18px;
+  margin: 10px 0;
+  box-shadow: 0 4px 14px rgba(17,24,39,0.05);
 }
+
 .score {
-  font-size: 34px;
-  font-weight: bold;
+  font-size: 48px;
+  font-weight: 900;
   text-align: center;
-  margin: 8px 0;
+  margin: 10px 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 18px;
+  border: 1px solid var(--border);
 }
-.ok { color: green; font-weight: bold; }
-.warn { color: #b45309; font-weight: bold; }
+
+.ok {
+  color: var(--success);
+  font-weight: 900;
+  background: rgba(5,150,105,0.1);
+  padding: 4px 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.warn {
+  color: var(--warning);
+  font-weight: 900;
+  background: rgba(217,119,6,0.1);
+  padding: 4px 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
 table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: white;
   margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(17,24,39,0.04);
 }
+
 th, td {
-  border-bottom: 1px solid #ddd;
-  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 9px;
   text-align: left;
   font-size: 14px;
 }
-th { background: #f1f1f1; }
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+th {
+  background: #f8fafc;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
 .team-edit {
   display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 78px 1fr;
   gap: 8px;
   align-items: center;
 }
+
+.team-edit span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+#courtView .card h2 {
+  text-align: center;
+  margin: 14px 0 4px;
+}
+
+#courtView button {
+  min-height: 52px;
+}
+
+#courtView button:nth-of-type(1),
+#courtView button:nth-of-type(2) {
+  background: var(--success);
+  font-size: 18px;
+}
+
 @media (min-width: 720px) {
-  .grid { grid-template-columns: repeat(5, 1fr); }
+  .grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  body {
+    padding: 22px;
+  }
+
+  .section {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 520px) {
+  body {
+    padding: 10px;
+  }
+
+  .hero {
+    border-radius: 18px;
+    padding: 18px;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .grid {
+    gap: 6px;
+  }
+
+  button, select, input {
+    font-size: 16px;
+    padding: 12px;
+  }
+
+  th, td {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+
+  .score {
+    font-size: 42px;
+  }
 }
