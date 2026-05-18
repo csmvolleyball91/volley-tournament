@@ -328,6 +328,91 @@ async function resetScores() {
   await loadData();
 }
 
+
+function getPhasePoolRanking(phase, pool) {
+  return poolStats(phase, pool).map(([name, s], index) => ({
+    name,
+    rank: index + 1,
+    score: s.score,
+    diff: s.diff,
+    pm: s.pm
+  }));
+}
+
+function getBrassage2StartTime() {
+  const slotStep = Number(settings.match_duration) + Number(settings.break_duration);
+  const brassage1Duration = 6 * slotStep;
+  return addMinutes(settings.start_time, brassage1Duration + Number(settings.break_between_rounds));
+}
+
+function generateRoundRobinRows(phase, poolName, court, poolTeams, startTime) {
+  const pairIdx = [[0,1],[2,3],[0,2],[1,3],[0,3],[1,2]];
+  const slotStep = Number(settings.match_duration) + Number(settings.break_duration);
+  return pairIdx.map((pair, slot) => ({
+    phase,
+    pool: poolName,
+    court,
+    scheduled_time: addMinutes(startTime, slot * slotStep),
+    team_a: poolTeams[pair[0]],
+    team_b: poolTeams[pair[1]],
+    score_a: null,
+    score_b: null,
+    winner: null,
+    status: 'pending'
+  }));
+}
+
+async function generateBrassage2() {
+  if (!adminUnlocked) return;
+
+  const b1Matches = matches.filter(m => m.phase === 'Brassage 1');
+  if (b1Matches.length !== 36) {
+    document.getElementById('adminMsg').innerText = `Impossible : il faut 36 matchs en Brassage 1, trouvés ${b1Matches.length}.`;
+    return;
+  }
+
+  const unfinished = b1Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
+  if (unfinished.length > 0) {
+    document.getElementById('adminMsg').innerText = `Impossible : ${unfinished.length} match(s) de Brassage 1 ne sont pas terminés.`;
+    return;
+  }
+
+  if (!confirm('Générer le Brassage 2 ? Les matchs Brassage 2 existants seront supprimés.')) return;
+
+  const rankings = {};
+  ['A','B','C','D','E','F'].forEach(pool => {
+    rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
+    if (rankings[pool].length !== 4) {
+      throw new Error(`Poule ${pool} invalide : ${rankings[pool].length} équipes classées.`);
+    }
+  });
+
+  const b2Pools = [
+    { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
+    { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
+    { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
+    { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
+    { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
+    { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
+  ];
+
+  const startB2 = getBrassage2StartTime();
+  let rows = [];
+  b2Pools.forEach(p => {
+    const poolTeams = p.source.map(([pool, rank]) => rankings[pool][rank-1].name);
+    rows.push(...generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
+  });
+
+  await client.from('matches').delete().eq('phase', 'Brassage 2');
+  const { error } = await client.from('matches').insert(rows);
+
+  document.getElementById('adminMsg').innerText = error
+    ? error.message
+    : `Brassage 2 généré ✅ Départ ${startB2}, ${rows.length} matchs créés.`;
+  await loadData();
+}
+
+
 client.channel('matches-live')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => loadData())
   .subscribe();
