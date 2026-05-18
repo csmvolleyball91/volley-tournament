@@ -372,6 +372,12 @@ function normalizeCode(code) {
   return String(code || '').trim();
 }
 
+function isBracketMatch(m) {
+  if (!m) return false;
+  const phase = String(m.phase || '').toLowerCase();
+  return Boolean(m.bracket) || phase.includes('tableau') || phase.includes('consolante');
+}
+
 function codeForMatch(m) {
   return normalizeCode(matchEditCodes[m.id]);
 }
@@ -716,7 +722,8 @@ function renderAdmin() {
       `<table><tr><th>Équipe</th><th>Code arbitre</th><th>B1</th><th>B2</th></tr>` +
       teams.map(t => `<tr><td>${t.name}</td><td><input class="code-input" data-ref-code-team="${escapeAttr(t.name)}" value="${codeMap[t.name] || ''}" inputmode="numeric" maxlength="4" placeholder="auto" /></td><td>${refCountByPhase['Brassage 1'][t.name] || 0}</td><td>${refCountByPhase['Brassage 2'][t.name] || 0}</td></tr>`).join('') +
       `</table>` +
-      `<button onclick="saveRefCodes()">Sauvegarder codes arbitres</button>`;
+      `<button onclick="saveRefCodes()">Sauvegarder codes arbitres</button>` +
+      `<button onclick="rebalanceRefereesForBrassages()">Rééquilibrer arbitres brassages</button>`;
   }
 }
 
@@ -850,6 +857,8 @@ function previousRefCounts(phase) {
 }
 
 function assignBalancedRefsInPools(rows, initialCounts = {}) {
+  // Règle métier : l'arbitre doit appartenir à la même poule que le match,
+  // ne doit pas jouer ce match, et la charge doit être lissée au maximum.
   const groups = {};
   rows.forEach((row, idx) => {
     const key = `${row.phase || ''}||${row.pool || ''}`;
@@ -857,33 +866,88 @@ function assignBalancedRefsInPools(rows, initialCounts = {}) {
     groups[key].push({ row, idx });
   });
 
-  const globalCounts = {};
-  teams.forEach(t => globalCounts[t.name] = Number(initialCounts[t.name] || 0));
+  const totalCounts = {};
+  teams.forEach(t => totalCounts[t.name] = Number(initialCounts[t.name] || 0));
 
   Object.values(groups).forEach(group => {
-    const localCounts = {};
+    // Ordre déterministe des 6 matchs de la poule.
+    group.sort((a,b) =>
+      Number(a.row.match_order || 0) - Number(b.row.match_order || 0) ||
+      String(a.row.scheduled_time || '').localeCompare(String(b.row.scheduled_time || '')) ||
+      Number(a.row.id || 0) - Number(b.row.id || 0)
+    );
+
+    const poolTeamNames = [];
     group.forEach(({ row }) => {
       [row.team_a, row.team_b].forEach(name => {
-        if (name && name !== 'À définir' && localCounts[name] === undefined) localCounts[name] = 0;
+        if (name && name !== 'À définir' && !poolTeamNames.includes(name)) poolTeamNames.push(name);
       });
     });
 
+    const phasePoolCounts = {};
+    poolTeamNames.forEach(name => phasePoolCounts[name] = 0);
+
     group.forEach(({ row }) => {
-      const available = Object.keys(localCounts).filter(t => t !== row.team_a && t !== row.team_b);
+      // Important : uniquement une équipe de cette poule, jamais d'un autre terrain.
+      const available = poolTeamNames.filter(name => name !== row.team_a && name !== row.team_b);
       const referee = available.sort((a,b) =>
-        (globalCounts[a] || 0) - (globalCounts[b] || 0) ||
-        (localCounts[a] || 0) - (localCounts[b] || 0) ||
+        // 1) équilibrage dans cette poule/phase : évite les 0/3.
+        (phasePoolCounts[a] || 0) - (phasePoolCounts[b] || 0) ||
+        // 2) pour le Brassage 2, tient compte du cumul déjà arbitré en Brassage 1.
+        (totalCounts[a] || 0) - (totalCounts[b] || 0) ||
+        // 3) rotation stable.
         String(a).localeCompare(String(b))
       )[0] || null;
+
       row.referee_team = referee;
       if (referee) {
-        localCounts[referee] = (localCounts[referee] || 0) + 1;
-        globalCounts[referee] = (globalCounts[referee] || 0) + 1;
+        phasePoolCounts[referee] = (phasePoolCounts[referee] || 0) + 1;
+        totalCounts[referee] = (totalCounts[referee] || 0) + 1;
       }
     });
   });
 
   return rows;
+}
+
+function refCountsFromRows(rows) {
+  const counts = {};
+  teams.forEach(t => counts[t.name] = 0);
+  rows.forEach(row => {
+    if (row.referee_team) counts[row.referee_team] = (counts[row.referee_team] || 0) + 1;
+  });
+  return counts;
+}
+
+async function rebalanceRefereesForBrassages() {
+  if (!adminUnlocked) return;
+  if (!confirm('Rééquilibrer les arbitres des brassages existants ? Les scores ne seront pas modifiés.')) return;
+
+  const codeMap = buildTeamRefCodeMap(true);
+  const sortMatches = (list) => list.slice().sort((a,b) =>
+    String(a.phase || '').localeCompare(String(b.phase || '')) ||
+    String(a.pool || '').localeCompare(String(b.pool || '')) ||
+    Number(a.match_order || 0) - Number(b.match_order || 0) ||
+    String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')) ||
+    Number(a.id || 0) - Number(b.id || 0)
+  );
+
+  const b1 = sortMatches(matches.filter(m => m.phase === 'Brassage 1')).map(m => ({ ...m }));
+  const b2 = sortMatches(matches.filter(m => m.phase === 'Brassage 2')).map(m => ({ ...m }));
+  const newB1 = assignBalancedRefsInPools(b1, {});
+  const newB2 = assignBalancedRefsInPools(b2, refCountsFromRows(newB1));
+  const rowsToUpdate = [...newB1, ...newB2].filter(r => r.id);
+
+  for (const row of rowsToUpdate) {
+    const referee = row.referee_team || null;
+    await client.from('matches').update({
+      referee_team: referee,
+      access_code: referee ? (codeMap[referee] || defaultCodeForTeamName(referee)) : null
+    }).eq('id', row.id);
+  }
+
+  document.getElementById('adminMsg').innerText = `Arbitres rééquilibrés ✅ (${rowsToUpdate.length} matchs mis à jour)`;
+  await loadData();
 }
 
 
@@ -905,7 +969,7 @@ function generateBrassage1Rows() {
         scheduled_time: addMinutes(settings.start_time, slot * slotStep),
         team_a: teamA,
         team_b: teamB,
-        referee_team: pickReferee(poolTeams, teamA, teamB, slot),
+        referee_team: null,
         score_a: null,
         score_b: null,
         winner: null,
