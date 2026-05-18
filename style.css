@@ -1548,3 +1548,37 @@ body {
   .admin-priority-tools { grid-template-columns: 1fr; }
   .forfeit-admin-grid { grid-template-columns: 1fr; }
 }
+
+
+/* v17.2a.6 - Admin actions toujours visibles */
+.admin-tools-always-visible {
+  margin: 14px 0 20px;
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
+  border: 2px solid rgba(11, 59, 130, .16);
+  box-shadow: 0 16px 36px rgba(11, 59, 130, .12);
+}
+.admin-tools-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.admin-tools-title h3 { margin: 2px 0 0; color: var(--club-blue-dark); }
+.admin-tools-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.admin-big-action {
+  min-height: 58px;
+  font-size: 16px;
+  font-weight: 900;
+  border-radius: 18px;
+}
+@media (max-width: 760px) {
+  .admin-tools-title { align-items: flex-start; flex-direction: column; }
+  .admin-tools-buttons { grid-template-columns: 1fr; }
+}

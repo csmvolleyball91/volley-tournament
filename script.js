@@ -101,6 +101,7 @@ function renderAll() {
   renderPlanning();
   renderStandings();
   renderAdmin();
+  renderAdminAlwaysVisibleTools();
   renderBrackets();
   renderPublicView();
   renderHistory();
@@ -806,6 +807,7 @@ function unlockAdminCode(code) {
     if (panel) panel.classList.remove('hidden');
     ensureAdminPriorityTools();
     if (msg) msg.innerText = 'Admin déverrouillé ✅';
+    renderAdminAlwaysVisibleTools();
     renderAdmin();
     renderBrackets();
   } else {
@@ -1887,4 +1889,110 @@ function renderPublicView() {
         '<div class="public-match-label">Match actuel</div>' + currentHtml + nextHtml +
       '</div>';
     }).join('') + '</div></div>';
+}
+
+
+// v17.2a.6 - Outils admin visibles et indépendants du layout
+function renderAdminAlwaysVisibleTools() {
+  if (!adminUnlocked) return;
+  const admin = document.getElementById('admin');
+  if (!admin) return;
+  let box = document.getElementById('adminToolsAlwaysVisible');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'adminToolsAlwaysVisible';
+    box.className = 'admin-tools-always-visible';
+    const msg = document.getElementById('adminMsg');
+    if (msg && msg.parentNode) msg.parentNode.insertBefore(box, msg.nextSibling);
+    else admin.insertBefore(box, admin.firstChild);
+  }
+  box.innerHTML = `
+    <div class="admin-tools-title">
+      <div>
+        <p class="eyebrow dark">Actions rapides admin</p>
+        <h3>Forfait / Reset match</h3>
+      </div>
+      <span class="admin-lock-badge">Visible après code keke</span>
+    </div>
+    <div class="admin-tools-buttons">
+      <button class="danger admin-big-action" onclick="adminForfeitPromptFlow()">Forfait avec score choisi</button>
+      <button class="admin-big-action" onclick="adminResetPromptFlow()">Reset match</button>
+    </div>
+    <p class="small">Ces deux actions sont volontairement affichées ici, en haut de l’admin, pour éviter qu’elles soient cachées dans les panneaux.</p>
+  `;
+}
+
+function adminChooseMatchPrompt(label) {
+  const eligible = matches
+    .filter(m => m.team_a && m.team_b && m.team_a !== 'À définir' && m.team_b !== 'À définir')
+    .sort((a,b) =>
+      String(a.phase || '').localeCompare(String(b.phase || '')) ||
+      Number(a.court || 999) - Number(b.court || 999) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+  if (!eligible.length) {
+    alert('Aucun match disponible.');
+    return null;
+  }
+  const list = eligible.map((m, i) => `${i + 1}. ${m.phase || '-'} · T${m.court || '-'} · ${m.team_a} vs ${m.team_b} · ${m.status || 'pending'} (${m.score_a == null ? 0 : m.score_a}-${m.score_b == null ? 0 : m.score_b})`).join('\n');
+  const raw = prompt(`${label}\n\nChoisis le numéro du match :\n\n${list}`);
+  if (raw === null) return null;
+  const idx = Number(raw) - 1;
+  if (!Number.isInteger(idx) || idx < 0 || idx >= eligible.length) {
+    alert('Numéro invalide.');
+    return null;
+  }
+  return eligible[idx];
+}
+
+async function adminForfeitPromptFlow() {
+  if (!adminUnlocked) return requestAdminAccess();
+  const m = adminChooseMatchPrompt('FORFAIT ADMIN');
+  if (!m) return;
+  const winnerRaw = prompt(`Vainqueur ?\n1. ${m.team_a}\n2. ${m.team_b}`);
+  if (winnerRaw === null) return;
+  const winnerSide = String(winnerRaw).trim() === '2' ? 'b' : 'a';
+  const scoreRaw = prompt('Score à appliquer ?\nExemple : 15-0', '15-0');
+  if (scoreRaw === null) return;
+  const mm = String(scoreRaw).trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
+  if (!mm) {
+    alert('Format score invalide. Utilise par exemple 15-0.');
+    return;
+  }
+  const winScore = Number(mm[1]);
+  const loseScore = Number(mm[2]);
+  if (winScore === loseScore) {
+    alert('Score invalide : il faut un vainqueur.');
+    return;
+  }
+  const scoreA = winnerSide === 'a' ? winScore : loseScore;
+  const scoreB = winnerSide === 'b' ? winScore : loseScore;
+  const winner = winnerSide === 'a' ? m.team_a : m.team_b;
+  const completedAt = new Date().toISOString();
+  if (!confirm(`Confirmer forfait ?\n${m.team_a} ${scoreA} - ${scoreB} ${m.team_b}\nVainqueur : ${winner}`)) return;
+  let result = await client.from('matches').update({ score_a: scoreA, score_b: scoreB, winner, status: 'done', completed_at: completedAt }).eq('id', m.id);
+  if (result.error) result = await client.from('matches').update({ score_a: scoreA, score_b: scoreB, winner, status: 'done' }).eq('id', m.id);
+  if (result.error) return alert('Erreur forfait : ' + result.error.message);
+  saveLocalCompletedTime(m.id, completedAt);
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = 'Forfait appliqué ✅';
+  await loadData();
+}
+
+async function adminResetPromptFlow() {
+  if (!adminUnlocked) return requestAdminAccess();
+  const m = adminChooseMatchPrompt('RESET MATCH ADMIN');
+  if (!m) return;
+  if (!confirm(`Reset match ?\n${m.phase || '-'} · T${m.court || '-'}\n${m.team_a} vs ${m.team_b}\n\nLe score repasse à 0-0 et le match redevient à jouer.`)) return;
+  let result = await client.from('matches').update({ score_a: 0, score_b: 0, winner: null, status: 'pending', started_at: null, completed_at: null }).eq('id', m.id);
+  if (result.error) result = await client.from('matches').update({ score_a: 0, score_b: 0, winner: null, status: 'pending' }).eq('id', m.id);
+  if (result.error) return alert('Erreur reset match : ' + result.error.message);
+  clearLocalCompletedTime(m.id);
+  if (activeScoreMatchId === m.id) activeScoreMatchId = null;
+  delete matchEditCodes[m.id];
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = 'Match réinitialisé ✅';
+  await loadData();
 }
