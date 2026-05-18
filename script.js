@@ -1132,16 +1132,30 @@ function renderAdminScoreCorrections() {
     .filter(m => m.status === 'done')
     .sort((a,b) => (Date.parse(getCompletionIso(b)) || 0) - (Date.parse(getCompletionIso(a)) || 0) || (b.id || 0) - (a.id || 0));
   if (!done.length) {
-    div.innerHTML = '<div class="card">Aucun match terminé à corriger.</div>';
+    div.innerHTML = '<div class="admin-empty-state">Aucun match terminé à corriger.</div>';
     return;
   }
-  div.innerHTML = `<table><tr><th>Match</th><th>Score A</th><th>Score B</th><th>Action</th></tr>` +
-    done.map(m => `<tr>
-      <td><b>T${m.court || '-'}</b> · ${m.phase || '-'}<br>${m.team_a || '-'} vs ${m.team_b || '-'}</td>
-      <td><input class="code-input" id="fixA_${m.id}" type="number" min="0" value="${m.score_a == null ? 0 : m.score_a}"></td>
-      <td><input class="code-input" id="fixB_${m.id}" type="number" min="0" value="${m.score_b == null ? 0 : m.score_b}"></td>
-      <td><button class="small-btn" onclick="adminUpdateScore(${m.id})">Corriger</button></td>
-    </tr>`).join('') + `</table>`;
+  div.innerHTML = `<div class="admin-correction-list">` + done.map(m => {
+    const completed = formatTime(getCompletionIso(m));
+    const a = m.score_a == null ? 0 : m.score_a;
+    const b = m.score_b == null ? 0 : m.score_b;
+    return `<article class="admin-correction-card">
+      <div class="admin-correction-main">
+        <div class="admin-correction-meta">
+          <span class="match-status-badge neutral">T${m.court || '-'}</span>
+          <span>${m.phase || '-'}</span>
+          <span>${completed ? 'Enregistré ' + completed : 'Heure inconnue'}</span>
+        </div>
+        <div class="admin-correction-title">${m.team_a || '-'} <strong>${a} - ${b}</strong> ${m.team_b || '-'}</div>
+        <div class="admin-correction-sub">Arbitre : ${m.referee || m.referee_team || 'non renseigné'}</div>
+      </div>
+      <div class="admin-correction-edit">
+        <label>${m.team_a || 'Équipe A'}<input id="fixA_${m.id}" type="number" min="0" value="${a}"></label>
+        <label>${m.team_b || 'Équipe B'}<input id="fixB_${m.id}" type="number" min="0" value="${b}"></label>
+        <button class="admin-primary" onclick="adminUpdateScore(${m.id})">Enregistrer</button>
+      </div>
+    </article>`;
+  }).join('') + `</div>`;
 }
 
 async function adminUpdateScore(id) {
@@ -1150,15 +1164,21 @@ async function adminUpdateScore(id) {
   if (!m) return;
   const a = Number(document.getElementById(`fixA_${id}`).value || 0);
   const b = Number(document.getElementById(`fixB_${id}`).value || 0);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0) { alert('Score invalide.'); return; }
   if (a === b) { alert('Match nul impossible.'); return; }
   const winner = a > b ? m.team_a : m.team_b;
   const completedAt = getCompletionIso(m) || new Date().toISOString();
+  if (!confirm(`Confirmer la correction ?
+${m.team_a} ${a} - ${b} ${m.team_b}
+Vainqueur : ${winner}`)) return;
   let result = await client.from('matches').update({ score_a: a, score_b: b, winner, status: 'done', completed_at: completedAt }).eq('id', id);
   if (result.error) {
     result = await client.from('matches').update({ score_a: a, score_b: b, winner, status: 'done' }).eq('id', id);
   }
   if (result.error) { alert('Erreur correction score : ' + result.error.message); return; }
   saveLocalCompletedTime(id, completedAt);
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = 'Score corrigé ✅ Classements recalculés automatiquement.';
   await loadData();
 }
 
