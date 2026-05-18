@@ -1932,10 +1932,22 @@ function renderPublicView() {
         (a.id || 0) - (b.id || 0);
     });
 
-  const firstCall = playable.find(function(m) { return !isPublicMatchLive(m); });
+  const nextToLaunchByCourt = courts
+    .map(function(c) {
+      return playable.find(function(m) { return Number(m.court) === Number(c) && !isPublicMatchLive(m); });
+    })
+    .filter(Boolean);
+
+  const firstCall = nextToLaunchByCourt[0];
+  const freeCourts = courts.filter(function(c) {
+    return !playable.some(function(m) { return Number(m.court) === Number(c) && isPublicMatchLive(m); });
+  });
+
   const callout = firstCall
-    ? '<div class="public-callout"><span>📢 Appel équipes</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Terrain ' + (firstCall.court || '-') + (firstCall.referee_team ? ' · Arbitre : ' + firstCall.referee_team : '') + '</em></div>'
-    : '<div class="public-callout is-calm"><span>✅ Tous les matchs prêts sont lancés</span><b>Surveillez les terrains libres</b><em>Prochaine rotation à confirmer</em></div>';
+    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Arbitre attendu : ' + (firstCall.referee_team || 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
+    : (freeCourts.length
+      ? '<div class="public-callout is-calm"><span>✅ Terrains disponibles</span><b>' + freeCourts.map(function(c){ return 'T' + c; }).join(' · ') + '</b><em>En attente de la prochaine rotation</em></div>'
+      : '<div class="public-callout is-calm"><span>✅ Tous les matchs sont lancés</span><b>Matchs en cours</b><em>Prochaine rotation à confirmer</em></div>');
 
   const cards = courts.map(function(c) {
     const courtMatches = playable.filter(function(m) { return Number(m.court) === Number(c); });

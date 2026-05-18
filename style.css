@@ -1944,3 +1944,22 @@ body {
     text-align: left;
   }
 }
+
+/* v17.3d - Appels équipes intelligents */
+.public-callout.is-urgent {
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+  border: 2px solid rgba(249, 115, 22, .28);
+  box-shadow: 0 18px 45px rgba(249, 115, 22, .16);
+}
+.public-callout.is-urgent span {
+  color: #9a3412;
+}
+.public-callout.is-urgent b {
+  color: #111827;
+}
+.public-callout.is-urgent em {
+  color: #1e3a8a;
+}
+.public-callout.is-calm {
+  border: 1px solid rgba(37, 99, 235, .15);
+}
