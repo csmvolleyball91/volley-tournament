@@ -1579,20 +1579,25 @@ function aggregatePhaseStats(phase) {
   return stats;
 }
 
+function teamNumberFromName(name) {
+  const m = String(name || '').match(/(\d+)/);
+  return m ? Number(m[1]) : 9999;
+}
+
 function globalRanking() {
+  // Classement tableaux demandé : B2 uniquement en priorité, puis B1 en tie-break.
+  // Pas de total B1+B2, pas de Diff B2 comme critère visible.
   const b2 = aggregatePhaseStats('Brassage 2');
   const b1 = aggregatePhaseStats('Brassage 1');
   return teams.map(t => ({
     name: t.name,
     b2Score: (b2[t.name] && b2[t.name].score != null ? b2[t.name].score : 0),
-    b1Score: (b1[t.name] && b1[t.name].score != null ? b1[t.name].score : 0),
-    b2Diff: (b2[t.name] && b2[t.name].diff != null ? b2[t.name].diff : 0),
-    b2Pm: (b2[t.name] && b2[t.name].pm != null ? b2[t.name].pm : 0)
+    b1Score: (b1[t.name] && b1[t.name].score != null ? b1[t.name].score : 0)
   })).sort((a,b) =>
     b.b2Score - a.b2Score ||
     b.b1Score - a.b1Score ||
-    b.b2Diff - a.b2Diff ||
-    b.b2Pm - a.b2Pm
+    teamNumberFromName(a.name) - teamNumberFromName(b.name) ||
+    String(a.name).localeCompare(String(b.name))
   );
 }
 
@@ -1602,9 +1607,9 @@ function renderBrackets() {
   if (!rankDiv || !bracketDiv) return;
 
   const ranking = globalRanking();
-  rankDiv.innerHTML = `<h3>Classement général provisoire</h3><table>
-    <tr><th>#</th><th>Équipe</th><th>B2</th><th>B1</th><th>Diff B2</th></tr>
-    ${ranking.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.name}</b></td><td>${r.b2Score}</td><td>${r.b1Score}</td><td>${r.b2Diff}</td></tr>`).join('')}
+  rankDiv.innerHTML = `<h3>Classement tableaux</h3><p class="muted">Tri : B2 prioritaire, puis B1 en cas d'égalité.</p><table>
+    <tr><th>#</th><th>Équipe</th><th>B2</th><th>B1</th></tr>
+    ${ranking.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.name}</b></td><td>${r.b2Score}</td><td>${r.b1Score}</td></tr>`).join('')}
   </table>`;
 
   const bracketMatches = matches.filter(m => m.bracket).sort((a,b) =>
@@ -1652,26 +1657,26 @@ function bracketRowsFromRanking(ranking) {
   // Quarts 9-12
   for (let i=0;i<4;i++) rows.push({
     phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order: 9+i,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending', next_match_order: 13 + Math.floor(i/2), next_slot: i % 2 === 0 ? 'A' : 'B'
   });
 
   // Demis 13-14, losers to 16
   for (let i=0;i<2;i++) rows.push({
     phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order: 13+i,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending', next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
     loser_next_match_order: 16, loser_next_slot: i === 0 ? 'A' : 'B'
   });
 
   rows.push({
     phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order: 15,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending'
   });
   rows.push({
     phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order: 16,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending'
   });
 
@@ -1686,12 +1691,12 @@ function bracketRowsFromRanking(ranking) {
   });
   for (let i=0;i<2;i++) rows.push({
     phase:'Consolante', bracket:'Consolante', round:'Demi', match_order: 105+i,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending', next_match_order: 107, next_slot: i === 0 ? 'A' : 'B'
   });
   rows.push({
     phase:'Consolante', bracket:'Consolante', round:'Finale', match_order: 107,
-    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
     status:'pending'
   });
 
@@ -1715,7 +1720,12 @@ async function generateBrackets() {
   if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
 
   const ranking = globalRanking();
-  const rows = bracketRowsFromRanking(ranking).map(r => ({ ...r, referee_team: null, access_code: null }));
+  const rows = bracketRowsFromRanking(ranking).map((r, idx) => ({
+    ...r,
+    court: r.court || ((idx % 6) + 1),
+    referee_team: null,
+    access_code: null
+  }));
 
   await client.from('matches').delete().in('phase', ['Tableau principal','Consolante']);
   const { error } = await client.from('matches').insert(rows);
