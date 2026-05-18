@@ -2244,3 +2244,49 @@ body {
   .timeline-connector { display: none; }
   .timeline-premium-step { width: 100%; justify-content: flex-start; }
 }
+
+/* v17.3k chrono + prochain match */
+.center-controls-k { gap: 14px; }
+.match-chrono {
+  min-width: 130px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.14);
+  border: 1px solid rgba(255,255,255,.24);
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 12px 30px rgba(0,0,0,.16);
+}
+.chrono-label {
+  display: block;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  opacity: .82;
+  margin-bottom: 4px;
+}
+.chrono-value {
+  display: block;
+  font-size: 1.45rem;
+  line-height: 1;
+  font-weight: 900;
+}
+.match-chrono-ended {
+  background: rgba(245, 158, 11, .25);
+  border-color: rgba(245, 158, 11, .7);
+}
+.match-chrono-ended .chrono-value {
+  font-size: 1.02rem;
+  color: #fff7ed;
+}
+.finish-btn-k {
+  font-size: 1rem;
+  padding: 14px 18px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+@media (max-width: 720px) {
+  .match-chrono { min-width: 110px; padding: 9px 11px; }
+  .chrono-value { font-size: 1.18rem; }
+  .match-chrono-ended .chrono-value { font-size: .9rem; }
+}

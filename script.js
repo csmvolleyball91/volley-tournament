@@ -2521,3 +2521,144 @@ loadData = async function() {
   restoreActiveScoreMatch();
   if (currentSection === 'score') renderScoreSection();
 };
+
+/* v17.3k chrono + prochain match */
+function chronoDurationMinutes() {
+  const n = Number(settings && settings.match_duration ? settings.match_duration : 12);
+  return Number.isFinite(n) && n > 0 ? n : 12;
+}
+
+function matchStartedMs(m) {
+  const raw = getMatchStartedAt ? getMatchStartedAt(m) : (m.started_at || m.start_actual || '');
+  const ms = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function formatClockSeconds(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return mm + ':' + ss;
+}
+
+function chronoStateForMatch(m) {
+  const start = matchStartedMs(m);
+  const duration = chronoDurationMinutes() * 60000;
+  if (!start || !duration) return { text: '--:--', ended: false, remainingMs: duration || 0 };
+  const remaining = start + duration - Date.now();
+  return { text: formatClockSeconds(remaining / 1000), ended: remaining <= 0, remainingMs: remaining };
+}
+
+function chronoHtml(m) {
+  if (!m || !isLiveMatchStatus(m) || isDoneMatch(m)) return '';
+  const start = matchStartedMs(m);
+  const duration = chronoDurationMinutes();
+  const state = chronoStateForMatch(m);
+  const cls = state.ended ? ' match-chrono-ended' : '';
+  return `<div class="match-chrono${cls}" data-match-id="${m.id}" data-start-ms="${start}" data-duration-min="${duration}">
+    <span class="chrono-label">Chrono</span>
+    <strong class="chrono-value">${state.ended ? 'Temps écoulé' : state.text}</strong>
+  </div>`;
+}
+
+function updateChronoDisplays() {
+  document.querySelectorAll('.match-chrono').forEach(function(el) {
+    const start = Number(el.getAttribute('data-start-ms') || 0);
+    const duration = Number(el.getAttribute('data-duration-min') || chronoDurationMinutes());
+    const value = el.querySelector('.chrono-value');
+    if (!start || !value) return;
+    const remaining = start + duration * 60000 - Date.now();
+    if (remaining <= 0) {
+      el.classList.add('match-chrono-ended');
+      value.textContent = 'Temps écoulé';
+    } else {
+      el.classList.remove('match-chrono-ended');
+      value.textContent = formatClockSeconds(remaining / 1000);
+    }
+  });
+}
+
+function maybeWarnChronoEnded(m) {
+  if (!m || !isLiveMatchStatus(m) || isDoneMatch(m)) return;
+  const state = chronoStateForMatch(m);
+  const key = 'volley_chrono_warned_' + m.id;
+  if (state.ended) {
+    try {
+      if (localStorage.getItem(key) === '1') return;
+      localStorage.setItem(key, '1');
+    } catch(e) {}
+    setTimeout(function() {
+      if (activeScoreMatchId && String(activeScoreMatchId) === String(m.id)) {
+        if (confirm('Temps écoulé pour ce match. Terminer le match maintenant ?')) {
+          finishMatch(m.id);
+        }
+      }
+    }, 100);
+  }
+}
+
+function nextPendingMatchOnCourt(court) {
+  const c = normalizeCourt ? normalizeCourt(court) : String(court || '');
+  const list = matches.filter(function(x) {
+    const xc = normalizeCourt ? normalizeCourt(x.court) : String(x.court || '');
+    return xc === c && !isDoneMatch(x) && !isLiveMatchStatus(x);
+  });
+  list.sort(function(a, b) {
+    const ta = scheduledSortValue ? scheduledSortValue(a) : (Number(a.match_order || a.order || a.id) || 0);
+    const tb = scheduledSortValue ? scheduledSortValue(b) : (Number(b.match_order || b.order || b.id) || 0);
+    return ta - tb;
+  });
+  return list[0] || null;
+}
+
+function proposeNextMatchAfterFinish(finishedMatch) {
+  const next = nextPendingMatchOnCourt(finishedMatch && finishedMatch.court);
+  if (!next) return;
+  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team || 'à définir');
+  const msg = 'Terrain ' + (next.court || '-') + ' libre.\n\nLancer le prochain match ?\n' +
+    (next.team_a || 'À définir') + ' vs ' + (next.team_b || 'À définir') + '\n' +
+    'Arbitre attendu : ' + ref;
+  setTimeout(function() {
+    if (confirm(msg)) launchMatch(next.id);
+  }, 250);
+}
+
+const renderMatchScoreboardBase_v173k = renderMatchScoreboard;
+renderMatchScoreboard = function(m) {
+  if (!m || isBracketMatch(m)) return renderMatchScoreboardBase_v173k(m);
+  const html = `
+    <div class="scoreboard-full scoreboard-polish-k">
+      <div class="score-half team-a">
+        <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
+        <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', 1)"` : 'disabled'}>+</button>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
+        <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', -1)"` : 'disabled'}>−</button>
+      </div>
+
+      <div class="center-controls center-controls-k">
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase || ''}</div>
+        ${chronoHtml(m)}
+        ${canEditMatch(m) ? `<button class="danger finish-btn finish-btn-k" onclick="finishMatch(${m.id})">Terminer le match</button>` : lockedMatchHtml(m)}
+      </div>
+
+      <div class="score-half team-b">
+        <div class="team-title">${m.team_b}${serviceBall(m, 'b')}</div>
+        <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', 1)"` : 'disabled'}>+</button>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
+        <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', -1)"` : 'disabled'}>−</button>
+      </div>
+    </div>
+  `;
+  setTimeout(function() { maybeWarnChronoEnded(m); updateChronoDisplays(); }, 50);
+  return html;
+};
+
+const finishMatchBase_v173k = finishMatch;
+finishMatch = async function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  await finishMatchBase_v173k(id);
+  const stillLive = matches.find(function(x) { return String(x.id) === String(id) && !isDoneMatch(x); });
+  if (m && !stillLive) proposeNextMatchAfterFinish(m);
+};
+
+setInterval(updateChronoDisplays, 1000);
