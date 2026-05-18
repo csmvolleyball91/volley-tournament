@@ -37,6 +37,7 @@ function renderAll() {
   renderStandings();
   renderAdmin();
   renderBrackets();
+  renderPublicView();
   if (currentSection === 'score') loadCourt(false);
 }
 
@@ -235,8 +236,8 @@ function loadCourt(showError = true) {
       </div>
 
       <div class="center-controls">
-        <button class="reset-btn" onclick="loadCourt(false)">⟳</button>
         <div class="mini-meta">T${court} · ${m.phase}</div>
+        <div class="service-indicator">${m.serving_team === 'b' ? m.team_b : m.team_a} 🏐 service</div>
         ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Terminer</button>` : lockedMatchHtml(m)}
       </div>
 
@@ -258,7 +259,9 @@ async function changePoint(id, side, delta) {
   const currentB = m.score_b ?? 0;
   const newA = side === 'a' ? Math.max(0, currentA + delta) : currentA;
   const newB = side === 'b' ? Math.max(0, currentB + delta) : currentB;
-  await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
+  const currentServing = m.serving_team || 'a';
+  const nextServing = currentServing === 'a' ? 'b' : 'a';
+  await client.from('matches').update({ score_a: newA, score_b: newB, serving_team: nextServing }).eq('id', id);
   await loadData();
 }
 
@@ -266,7 +269,9 @@ async function addPoint(id, side) {
   const m = matches.find(x => x.id === id);
   const newA = (m.score_a ?? 0) + (side === 'a' ? 1 : 0);
   const newB = (m.score_b ?? 0) + (side === 'b' ? 1 : 0);
-  await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
+  const currentServing = m.serving_team || 'a';
+  const nextServing = currentServing === 'a' ? 'b' : 'a';
+  await client.from('matches').update({ score_a: newA, score_b: newB, serving_team: nextServing }).eq('id', id);
   await loadData();
 }
 
@@ -286,6 +291,7 @@ async function finishMatch(id) {
     alert('Match nul impossible : ajoute un point avant de terminer.');
     return;
   }
+  if (!confirm(`Confirmer le score ?\n${m.team_a}: ${m.score_a ?? 0}\n${m.team_b}: ${m.score_b ?? 0}`)) return;
   const winner = (m.score_a ?? 0) > (m.score_b ?? 0) ? m.team_a : m.team_b;
   await client.from('matches').update({ status: 'done', winner }).eq('id', id);
   await loadData();
@@ -931,3 +937,23 @@ client.channel('matches-live')
   .subscribe();
 
 loadData();
+
+
+function renderPublicView() {
+  const div = document.getElementById('publicViewContent');
+  if (!div) return;
+  const upcoming = matches.filter(m => m.status !== 'done' && m.team_a && m.team_b)
+    .sort((a,b) => Number(a.court)-Number(b.court) || (a.scheduled_time||'').localeCompare(b.scheduled_time||''));
+  const courts = [...new Set(upcoming.map(m=>m.court))];
+  div.innerHTML = courts.map(c => {
+    const cm = upcoming.filter(m=>m.court===c);
+    const now = cm[0];
+    const next = cm[1];
+    return `<div class="card"><h3>Terrain ${c}</h3>
+      <b>EN COURS</b><br>${now ? `${now.team_a} vs ${now.team_b}` : 'Aucun'}<br>
+      <small>Arbitre : ${now?.referee_team || 'Libre'}</small><hr>
+      <b>À SUIVRE</b><br>${next ? `${next.team_a} vs ${next.team_b}` : '—'}<br>
+      <small>Arbitre : ${next?.referee_team || 'Libre'}</small>
+    </div>`;
+  }).join('');
+}
