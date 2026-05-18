@@ -113,42 +113,98 @@
     <h2>Admin</h2>
     <div id="adminMsg" class="card"></div>
 
-    <div id="adminPanel" class="hidden">
-      <h3>Configuration tournoi</h3>
-      <label>Départ tournoi</label>
-      <input id="cfgStart" type="time" />
-      <label>Durée match brassage (min)</label>
-      <input id="cfgDuration" type="number" />
-      <label>Pause entre matchs (min)</label>
-      <input id="cfgBreak" type="number" />
-      <label>Pause entre brassage 1 et 2 (min)</label>
-      <input id="cfgRoundBreak" type="number" />
-      <label>Nombre de terrains</label>
-      <input id="cfgCourts" type="number" />
-      <button onclick="saveSettings()">Sauvegarder configuration</button>
+    <div id="adminPanel" class="hidden admin-premium-panel">
+      <div class="admin-hero-card">
+        <div>
+          <p class="eyebrow dark">Administration</p>
+          <h3>Console tournoi</h3>
+          <p class="small">Configuration, génération des phases, équipes et corrections.</p>
+        </div>
+        <span class="admin-lock-badge">Mode admin</span>
+      </div>
 
-      <h3>Actions</h3>
-      <button onclick="regenerateBrassage1()">Régénérer brassage 1 avec horaires</button>
-      <button onclick="generateBrassage2()">Générer brassage 2</button>
-      <button onclick="generateBrackets()">Générer tableaux</button>
-      <button onclick="assignRefsAndCodes()">Attribuer arbitres + codes équipe</button>
-      <button onclick="fillRandomMissingResults('Brassage 1')">Test : remplir Brassage 1 aléatoire</button>
-      <button onclick="fillRandomMissingResults('Brassage 2')">Test : remplir Brassage 2 aléatoire</button>
-      <button onclick="fillRandomMissingResults('all')">Test : remplir tous les brassages manquants</button>
-      <button class="danger" onclick="resetScores()">Reset tous les scores</button>
+      <div class="admin-grid">
+        <article class="admin-card admin-card-wide">
+          <div class="admin-card-head">
+            <div>
+              <p class="eyebrow dark">Paramètres</p>
+              <h3>Configuration tournoi</h3>
+            </div>
+          </div>
+          <div class="admin-form-grid">
+            <label><span>Départ tournoi</span><input id="cfgStart" type="time" /></label>
+            <label><span>Durée match brassage (min)</span><input id="cfgDuration" type="number" /></label>
+            <label><span>Pause entre matchs (min)</span><input id="cfgBreak" type="number" /></label>
+            <label><span>Pause entre brassage 1 et 2 (min)</span><input id="cfgRoundBreak" type="number" /></label>
+            <label><span>Nombre de terrains</span><input id="cfgCourts" type="number" /></label>
+          </div>
+          <button class="admin-primary" onclick="saveSettings()">Sauvegarder configuration</button>
+        </article>
 
-      <h3>Équipes</h3>
-      <p class="small">Tu pourras remplacer les noms la veille ici, sans toucher au code.</p>
-      <div id="teamsAdmin"></div>
-      <button onclick="saveTeams()">Sauvegarder noms équipes</button>
+        <article class="admin-card">
+          <div class="admin-card-head">
+            <div>
+              <p class="eyebrow dark">Phases</p>
+              <h3>Génération</h3>
+            </div>
+          </div>
+          <div class="admin-actions-grid">
+            <button onclick="regenerateBrassage1()">Brassage 1</button>
+            <button onclick="generateBrassage2()">Brassage 2</button>
+            <button onclick="generateBrackets()">Tableaux</button>
+            <button onclick="assignRefsAndCodes()">Arbitres + codes</button>
+          </div>
+        </article>
 
-      <h3>Codes arbitres</h3>
-      <p class="small">Codes fixes par équipe, visibles seulement en admin. Tu peux les modifier ici.</p>
-      <div id="codesAdmin"></div>
+        <article class="admin-card">
+          <div class="admin-card-head">
+            <div>
+              <p class="eyebrow dark">Tests</p>
+              <h3>Résultats fictifs</h3>
+            </div>
+          </div>
+          <div class="admin-actions-grid">
+            <button onclick="fillRandomMissingResults('Brassage 1')">Remplir B1</button>
+            <button onclick="fillRandomMissingResults('Brassage 2')">Remplir B2</button>
+            <button onclick="fillRandomMissingResults('all')">Tout remplir</button>
+            <button class="danger" onclick="resetScores()">Reset scores</button>
+          </div>
+        </article>
+      </div>
 
-      <h3>Correction scores terminés</h3>
-      <p class="small">Admin uniquement : corrige un score déjà validé si erreur de saisie.</p>
-      <div id="scoreCorrectionsAdmin"></div>
+      <article class="admin-card admin-card-wide">
+        <div class="admin-card-head">
+          <div>
+            <p class="eyebrow dark">Équipes</p>
+            <h3>Noms des équipes</h3>
+          </div>
+          <button onclick="saveTeams()">Sauvegarder noms</button>
+        </div>
+        <p class="small">Tu pourras remplacer les noms la veille ici, sans toucher au code.</p>
+        <div id="teamsAdmin" class="admin-list-panel"></div>
+      </article>
+
+      <article class="admin-card admin-card-wide">
+        <div class="admin-card-head">
+          <div>
+            <p class="eyebrow dark">Arbitrage</p>
+            <h3>Codes arbitres</h3>
+          </div>
+        </div>
+        <p class="small">Codes fixes par équipe, visibles seulement en admin. Tu peux les modifier ici.</p>
+        <div id="codesAdmin" class="admin-list-panel"></div>
+      </article>
+
+      <article class="admin-card admin-card-wide">
+        <div class="admin-card-head">
+          <div>
+            <p class="eyebrow dark">Corrections</p>
+            <h3>Scores terminés</h3>
+          </div>
+        </div>
+        <p class="small">Admin uniquement : corrige un score déjà validé si erreur de saisie.</p>
+        <div id="scoreCorrectionsAdmin" class="admin-list-panel"></div>
+      </article>
     </div>
 
   </div>
@@ -157,6 +213,6 @@
     window.SUPABASE_URL = "https://oqabkmiwpefhitwwzrqk.supabase.co";
     window.SUPABASE_KEY = "sb_publishable_OAwnRz5aJVgL_JbVJSctXg__CuQ1kvN";
   </script>
-  <script src="script.js?v=17_1d_fix2"></script>
+  <script src="script.js?v=17_2a1"></script>
 </body>
 </html>

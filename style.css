@@ -1332,3 +1332,128 @@ body {
   .launch-court { font-size: 24px; }
   .launch-referee { margin-left: 16px; margin-right: 16px; }
 }
+
+/* v17.2a.1 - Admin premium cleanup (visuel uniquement) */
+.admin-premium-panel {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.admin-hero-card,
+.admin-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  border: 1px solid rgba(11, 59, 130, .10);
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 14px 34px rgba(11, 59, 130, .10);
+}
+.admin-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  overflow: hidden;
+  position: relative;
+}
+.admin-hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  background: linear-gradient(180deg, var(--club-blue), var(--club-yellow));
+}
+.admin-hero-card h3,
+.admin-card h3 {
+  margin: 2px 0 4px;
+  color: var(--club-blue-dark);
+}
+.admin-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 9px 13px;
+  font-weight: 950;
+  color: var(--club-blue-dark);
+  background: #fff3bc;
+  border: 1px solid rgba(245, 183, 0, .35);
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.admin-card-wide {
+  margin-bottom: 16px;
+}
+.admin-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.admin-form-grid label {
+  display: block;
+  margin: 0;
+  color: #4b5b73;
+  font-weight: 900;
+}
+.admin-form-grid label span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.admin-form-grid input,
+.admin-list-panel input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(11, 59, 130, .14);
+  background: #fff;
+  padding: 11px 12px;
+  font-weight: 850;
+  box-sizing: border-box;
+}
+.admin-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.admin-actions-grid button,
+.admin-primary,
+.admin-card-head button {
+  border-radius: 15px;
+  box-shadow: none;
+}
+.admin-primary {
+  width: 100%;
+  background: linear-gradient(135deg, var(--club-blue), #0e55b3);
+}
+.admin-list-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(11, 59, 130, .045);
+  border: 1px solid rgba(11, 59, 130, .08);
+}
+.admin-list-panel > div,
+.admin-list-panel .card {
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(11, 59, 130, .08);
+}
+@media (max-width: 980px) {
+  .admin-grid { grid-template-columns: 1fr; }
+  .admin-form-grid { grid-template-columns: 1fr; }
+  .admin-hero-card { align-items: flex-start; flex-direction: column; }
+}
