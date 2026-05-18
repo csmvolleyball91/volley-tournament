@@ -22,6 +22,7 @@ let settings = null;
 let currentSection = null;
 let adminUnlocked = false;
 let activeScoreMatchId = null;
+let matchEditCodes = {};
 
 async function loadData() {
   const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
@@ -83,8 +84,58 @@ function renderAll() {
 
 function renderSubtitle() {
   if (!settings) return;
-  document.getElementById('subtitle').innerText =
-    `${settings.teams_count} équipes · ${settings.courts_count} terrains · départ ${settings.start_time} · ${settings.match_duration} min + ${settings.break_duration} min`;
+  const el = document.getElementById('subtitle');
+  if (!el) return;
+  const info = currentPhaseInfo();
+  const phaseLine = info
+    ? `Phase en cours : ${info.phase} · début ${info.startLabel} · fin estimée ${info.endLabel}`
+    : 'Phase en cours : aucun match à venir';
+  el.innerHTML = `${phaseLine}<br>${settings.teams_count} équipes · ${settings.courts_count} terrains`;
+}
+
+function currentPhaseInfo() {
+  const active = matches
+    .filter(m => m.status === 'live' && m.team_a && m.team_b)
+    .sort((a,b) => Number(a.court || 0) - Number(b.court || 0) || (a.id || 0) - (b.id || 0))[0];
+  const next = matches
+    .filter(m => m.status !== 'done' && m.team_a && m.team_b)
+    .sort((a,b) => (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') || Number(a.court || 0) - Number(b.court || 0) || (a.id || 0) - (b.id || 0))[0];
+  const m = active || next;
+  if (!m) return null;
+  const start = matchStartLabel(m);
+  return {
+    phase: m.phase || '-',
+    startLabel: start.label,
+    endLabel: addMinutes(start.time, Number(settings.match_duration || 12))
+  };
+}
+
+function matchStartStorageKey(id) {
+  return `volley_started_time_${id}`;
+}
+
+function saveLocalStartedTime(id, value) {
+  try { localStorage.setItem(matchStartStorageKey(id), value); } catch(e) {}
+}
+
+function getMatchStartedValue(m) {
+  return m.started_at || m.start_actual || localStorage.getItem(matchStartStorageKey(m.id)) || '';
+}
+
+function timeFromIsoOrTime(value) {
+  if (!value) return '';
+  if (/^\d{2}:\d{2}$/.test(String(value))) return String(value);
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+}
+
+function matchStartLabel(m) {
+  const real = getMatchStartedValue(m);
+  const realTime = timeFromIsoOrTime(real);
+  if (realTime) return { time: realTime, label: `${realTime} réel` };
+  const theoretical = computedScheduledTime(m) || (settings.start_time || '09:30');
+  return { time: theoretical, label: `${theoretical} théorique` };
 }
 
 
@@ -205,7 +256,12 @@ function renderHistory() {
   if (!div) return;
   const done = matches
     .filter(m => m.status === 'done')
-    .sort((a,b) => (computedScheduledTime(b) || '').localeCompare(computedScheduledTime(a) || '') || Number(b.court || 0) - Number(a.court || 0) || (b.id || 0) - (a.id || 0));
+    .sort((a,b) => {
+      const tb = Date.parse(getCompletionIso(b)) || 0;
+      const ta = Date.parse(getCompletionIso(a)) || 0;
+      if (tb !== ta) return tb - ta;
+      return (b.id || 0) - (a.id || 0);
+    });
 
   if (!done.length) {
     div.innerHTML = '<div class="card">Aucun match terminé pour le moment.</div>';
@@ -213,8 +269,9 @@ function renderHistory() {
   }
 
   div.innerHTML = `<table>
-    <tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Match</th><th>Score</th><th>Gagnant</th><th>Arbitre</th></tr>
+    <tr><th>Enregistré</th><th>Heure match</th><th>Terrain</th><th>Phase</th><th>Match</th><th>Score</th><th>Gagnant</th><th>Arbitre</th></tr>
     ${done.map(m => `<tr>
+      <td><b>${formatDateTimeFr(getCompletionIso(m))}</b></td>
       <td>${computedScheduledTime(m) || '-'}</td>
       <td>T${m.court || '-'}</td>
       <td>${m.phase || '-'}</td>
@@ -311,27 +368,62 @@ function renderStandings() {
 }
 
 
-function enteredMatchCode() {
-  const el = document.getElementById('matchCode');
-  return el ? el.value.trim() : '';
+function normalizeCode(code) {
+  return String(code || '').trim();
 }
 
-function isBracketMatch(m) {
-  return (m.phase || '').includes('Tableau') || m.bracket || (m.phase || '') === 'Consolante';
+function codeForMatch(m) {
+  return normalizeCode(matchEditCodes[m.id]);
+}
+
+function completedTimeKey(id) {
+  return `volley_completed_time_${id}`;
+}
+
+function saveLocalCompletedTime(id, iso) {
+  try { localStorage.setItem(completedTimeKey(id), iso); } catch(e) {}
+}
+
+function getCompletionIso(m) {
+  return m.completed_at || m.finished_at || m.done_at || m.completed_time || m.updated_at || localStorage.getItem(completedTimeKey(m.id)) || '';
+}
+
+function formatDateTimeFr(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function validateCodeForMatch(m, code) {
+  const entered = normalizeCode(code);
+  const codeMap = buildTeamRefCodeMap(false);
+
+  if (isBracketMatch(m)) {
+    return entered && Object.values(codeMap).some(c => String(c) === entered);
+  }
+
+  const expected = m.referee_team ? (codeMap[m.referee_team] || m.access_code) : m.access_code;
+  return expected && entered === String(expected);
 }
 
 function canEditMatch(m) {
-  const entered = enteredMatchCode();
-  const codeMap = buildTeamRefCodeMap(false);
+  return validateCodeForMatch(m, codeForMatch(m));
+}
 
-  // En tableau : arbitrage libre. N'importe quelle équipe peut saisir son code arbitre fixe.
-  if (isBracketMatch(m)) {
-    return entered && Object.values(codeMap).some(code => String(code) === entered);
+function askRefCodeForMatch(m) {
+  const label = isBracketMatch(m)
+    ? 'Code arbitre de l’équipe qui arbitre ce match'
+    : `Code arbitre de ${m.referee_team || 'l’équipe arbitre'}`;
+  const code = prompt(`${label} :`);
+  if (code === null) return null;
+  const clean = normalizeCode(code);
+  if (!validateCodeForMatch(m, clean)) {
+    alert(isBracketMatch(m) ? 'Code arbitre inconnu.' : 'Code arbitre incorrect pour ce match.');
+    return null;
   }
-
-  // En brassage : seul le code de l'équipe arbitre désignée débloque le match.
-  const expected = m.referee_team ? (codeMap[m.referee_team] || m.access_code) : m.access_code;
-  return expected && entered === String(expected);
+  matchEditCodes[m.id] = clean;
+  return clean;
 }
 
 function lockedMatchHtml(m) {
@@ -377,41 +469,66 @@ function renderScoreSection() {
     return;
   }
 
-  listDiv.innerHTML = todo.map(m => `
-    <div class="match-launch-card">
-      <div class="launch-top"><b>Terrain ${m.court || '-'}</b><span>${computedScheduledTime(m) || '-'}</span></div>
-      <div class="launch-phase">${m.phase || '-'}${m.pool ? ' · Poule ' + m.pool : ''}</div>
-      <div class="launch-teams">${m.team_a}<span>vs</span>${m.team_b}</div>
-      <div class="launch-ref">Arbitre : <b>${isBracketMatch(m) ? 'libre' : (m.referee_team || '-')}</b></div>
-      <button onclick="launchMatch(${m.id})">Lancer ce match</button>
-    </div>
-  `).join('');
+  listDiv.innerHTML = todo.map(m => {
+    const scoreA = m.score_a != null ? m.score_a : 0;
+    const scoreB = m.score_b != null ? m.score_b : 0;
+    const ref = isBracketMatch(m) ? 'Arbitrage libre' : (m.referee_team || '-');
+    const statusLabel = m.status === 'live' ? 'EN COURS' : 'À LANCER';
+    return `
+      <button type="button" class="public-court-card match-select-card" onclick="launchMatch(${m.id})">
+        <div class="public-court-top">
+          <div class="public-court-title">Terrain ${m.court || '-'}</div>
+          <div class="status-pill status-next">${statusLabel}</div>
+        </div>
+        <div class="public-match-label">${m.phase || '-'}${m.pool ? ' · Poule ' + m.pool : ''} · ${computedScheduledTime(m) || '-'}</div>
+        <div class="public-current-match match-select-teams">
+          <span>${m.team_a}</span>
+          <em>vs</em>
+          <span>${m.team_b}</span>
+        </div>
+        <div class="public-scoreline mini-scoreline"><span>${scoreA}</span><b>-</b><span>${scoreB}</span></div>
+        <div class="public-ref">Arbitre : ${ref}</div>
+        <div class="launch-cta">Cliquer pour lancer le match</div>
+      </button>
+    `;
+  }).join('');
 }
 
 async function launchMatch(id) {
   const m = matches.find(x => x.id === id);
   if (!m) return;
-  if (!canEditMatch(m)) {
-    alert(isBracketMatch(m) ? 'Entre le code arbitre de l’équipe qui arbitre.' : 'Code arbitre incorrect pour ce match.');
-    return;
-  }
+  const code = askRefCodeForMatch(m);
+  if (!code) return;
 
-  const update = { status: 'live' };
+  const startedAt = new Date().toISOString();
+  const update = { status: 'live', started_at: startedAt };
   if (isBracketMatch(m)) {
-    const refTeam = teamNameFromRefCode(enteredMatchCode());
+    const refTeam = teamNameFromRefCode(code);
     if (refTeam) update.referee_team = refTeam;
   }
 
-  const { error } = await client.from('matches').update(update).eq('id', id);
-  if (error) {
-    alert('Erreur lancement match : ' + error.message);
+  let result = await client.from('matches').update(update).eq('id', id);
+  if (result.error) {
+    const fallback = { status: 'live' };
+    if (update.referee_team) fallback.referee_team = update.referee_team;
+    result = await client.from('matches').update(fallback).eq('id', id);
+  }
+  if (result.error) {
+    alert('Erreur lancement match : ' + result.error.message);
     return;
   }
+  saveLocalStartedTime(id, startedAt);
   activeScoreMatchId = id;
   await loadData();
 }
 
 function openLiveMatch(id) {
+  const m = matches.find(x => x.id === id);
+  if (!m) return;
+  if (!canEditMatch(m)) {
+    const code = askRefCodeForMatch(m);
+    if (!code) return;
+  }
   activeScoreMatchId = id;
   renderScoreSection();
 }
@@ -509,21 +626,48 @@ async function finishMatch(id) {
   }
   if (!confirm(`Confirmer le score ?\n${m.team_a}: ${m.score_a == null ? 0 : m.score_a}\n${m.team_b}: ${m.score_b == null ? 0 : m.score_b}`)) return;
   const winner = (m.score_a == null ? 0 : m.score_a) > (m.score_b == null ? 0 : m.score_b) ? m.team_a : m.team_b;
-  await client.from('matches').update({ status: 'done', winner }).eq('id', id);
+  const completedAt = new Date().toISOString();
+  let result = await client.from('matches').update({ status: 'done', winner, completed_at: completedAt }).eq('id', id);
+  if (result.error) {
+    result = await client.from('matches').update({ status: 'done', winner }).eq('id', id);
+  }
+  if (result.error) {
+    alert('Erreur fin de match : ' + result.error.message);
+    return;
+  }
+  saveLocalCompletedTime(id, completedAt);
+  delete matchEditCodes[id];
   await loadData();
 }
 
-function unlockAdmin() {
-  const code = document.getElementById('adminCode').value;
+function requestAdminAccess() {
+  if (adminUnlocked) {
+    show('admin');
+    return;
+  }
+  const code = prompt('Code admin :');
+  if (code === null) return;
+  unlockAdminCode(code);
+}
+
+function unlockAdminCode(code) {
   if (code === settings.admin_code) {
     adminUnlocked = true;
-    document.getElementById('adminPanel').classList.remove('hidden');
-    document.getElementById('adminMsg').innerText = 'Admin déverrouillé ✅';
+    show('admin');
+    const panel = document.getElementById('adminPanel');
+    const msg = document.getElementById('adminMsg');
+    if (panel) panel.classList.remove('hidden');
+    if (msg) msg.innerText = 'Admin déverrouillé ✅';
     renderAdmin();
-  renderBrackets();
+    renderBrackets();
   } else {
-    document.getElementById('adminMsg').innerText = 'Code admin incorrect.';
+    alert('Code admin incorrect.');
   }
+}
+
+// Compatibilité ancien bouton éventuel
+function unlockAdmin() {
+  requestAdminAccess();
 }
 
 function renderAdmin() {
@@ -609,15 +753,16 @@ function addMinutes(time, minutes) {
 
 
 
-function code4() {
-  return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+function defaultTeamCode(team) {
+  const idx = teams.findIndex(t => t.name === team.name || t.id === team.id);
+  const n = Number(team.id || (idx + 1) || 1);
+  return String(n).padStart(4, '0').slice(-4);
 }
 
-function generateUniqueCode(usedCodes) {
-  let code = code4();
-  while (usedCodes.has(code)) code = code4();
-  usedCodes.add(code);
-  return code;
+function defaultCodeForTeamName(teamName) {
+  const t = teams.find(x => x.name === teamName);
+  if (!t) return '';
+  return defaultTeamCode(t);
 }
 
 function isValidRefCode(code) {
@@ -629,26 +774,20 @@ function escapeAttr(value) {
 }
 
 function buildTeamRefCodeMap(allowGenerate = false) {
-  const usedCodes = new Set();
   const map = {};
 
-  // Source de vérité : codes déjà sauvegardés dans les matchs de l'équipe arbitre.
-  // On ne génère jamais de nouveau code au simple affichage, sinon il change à chaque refresh.
+  // 1 code fixe par équipe : par défaut 0001, 0002, 0003...
+  // Les codes sauvegardés en admin restent prioritaires, mais on ne génère plus jamais d'aléatoire.
+  teams.forEach(t => {
+    map[t.name] = defaultTeamCode(t);
+  });
+
   matches.forEach(m => {
     const referee = m.referee_team;
     const code = String(m.access_code || '').trim();
     if (!referee || !isValidRefCode(code)) return;
-    if (!map[referee] && !usedCodes.has(code)) {
-      map[referee] = code;
-      usedCodes.add(code);
-    }
+    map[referee] = code;
   });
-
-  if (allowGenerate) {
-    teams.forEach(t => {
-      if (!map[t.name]) map[t.name] = generateUniqueCode(usedCodes);
-    });
-  }
 
   return map;
 }
@@ -701,7 +840,16 @@ function withAccessCodes(rows, start = 1) {
   return withTeamAccessCodes(rows);
 }
 
-function assignBalancedRefsInPools(rows) {
+function previousRefCounts(phase) {
+  const counts = {};
+  teams.forEach(t => counts[t.name] = 0);
+  matches.filter(m => m.phase === phase && m.referee_team).forEach(m => {
+    counts[m.referee_team] = (counts[m.referee_team] || 0) + 1;
+  });
+  return counts;
+}
+
+function assignBalancedRefsInPools(rows, initialCounts = {}) {
   const groups = {};
   rows.forEach((row, idx) => {
     const key = `${row.phase || ''}||${row.pool || ''}`;
@@ -709,24 +857,35 @@ function assignBalancedRefsInPools(rows) {
     groups[key].push({ row, idx });
   });
 
+  const globalCounts = {};
+  teams.forEach(t => globalCounts[t.name] = Number(initialCounts[t.name] || 0));
+
   Object.values(groups).forEach(group => {
-    const counts = {};
+    const localCounts = {};
     group.forEach(({ row }) => {
       [row.team_a, row.team_b].forEach(name => {
-        if (name && name !== 'À définir' && counts[name] === undefined) counts[name] = 0;
+        if (name && name !== 'À définir' && localCounts[name] === undefined) localCounts[name] = 0;
       });
     });
 
     group.forEach(({ row }) => {
-      const available = Object.keys(counts).filter(t => t !== row.team_a && t !== row.team_b);
-      const referee = available.sort((a,b) => (counts[a] || 0) - (counts[b] || 0) || String(a).localeCompare(String(b)))[0] || null;
+      const available = Object.keys(localCounts).filter(t => t !== row.team_a && t !== row.team_b);
+      const referee = available.sort((a,b) =>
+        (globalCounts[a] || 0) - (globalCounts[b] || 0) ||
+        (localCounts[a] || 0) - (localCounts[b] || 0) ||
+        String(a).localeCompare(String(b))
+      )[0] || null;
       row.referee_team = referee;
-      if (referee) counts[referee] = (counts[referee] || 0) + 1;
+      if (referee) {
+        localCounts[referee] = (localCounts[referee] || 0) + 1;
+        globalCounts[referee] = (globalCounts[referee] || 0) + 1;
+      }
     });
   });
 
   return rows;
 }
+
 
 function generateBrassage1Rows() {
   const pairIdx = [[0,1],[2,3],[0,2],[1,3],[0,3],[1,2]];
@@ -793,12 +952,23 @@ async function fillRandomMissingResults(phase) {
   for (const m of target) {
     const score = randomMatchScore();
     const winner = score.score_a > score.score_b ? m.team_a : m.team_b;
-    await client.from('matches').update({
+    const completedAt = new Date(Date.now() + Math.floor(Math.random() * 1000)).toISOString();
+    let result = await client.from('matches').update({
       score_a: score.score_a,
       score_b: score.score_b,
       winner,
-      status: 'done'
+      status: 'done',
+      completed_at: completedAt
     }).eq('id', m.id);
+    if (result.error) {
+      result = await client.from('matches').update({
+        score_a: score.score_a,
+        score_b: score.score_b,
+        winner,
+        status: 'done'
+      }).eq('id', m.id);
+    }
+    if (!result.error) saveLocalCompletedTime(m.id, completedAt);
   }
 
   document.getElementById('adminMsg').innerText = `${target.length} résultat(s) rempli(s) aléatoirement pour ${label} ✅`;
@@ -845,7 +1015,7 @@ function generateRoundRobinRows(phase, poolName, court, poolTeams, startTime) {
       scheduled_time: addMinutes(startTime, slot * slotStep),
       team_a: teamA,
       team_b: teamB,
-      referee_team: pickReferee(poolTeams, teamA, teamB, slot),
+      referee_team: null,
       score_a: null,
       score_b: null,
       winner: null,
@@ -894,7 +1064,7 @@ async function generateBrassage2() {
     const poolTeams = p.source.map(([pool, rank]) => rankings[pool][rank-1].name);
     rows.push(...generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
   });
-  rows = withAccessCodes(assignBalancedRefsInPools(rows), 37);
+  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
 
   await client.from('matches').delete().eq('phase', 'Brassage 2');
   const { error } = await client.from('matches').insert(rows);
@@ -1144,25 +1314,34 @@ async function assignRefsAndCodes() {
     teams.forEach(t => phaseCounts[phase][t.name] = 0);
   });
 
-  // 1) Rééquilibrage séparé par phase de brassage, pas sur le tournoi complet.
+  // 1) Rééquilibrage des phases de brassage.
+  // Brassage 1 : équilibrage par poule.
+  // Brassage 2 : on tient compte des arbitrages déjà faits en Brassage 1 pour lisser le total.
+  let cumulativeCounts = {};
+  teams.forEach(t => cumulativeCounts[t.name] = 0);
+
   for (const phase of ['Brassage 1', 'Brassage 2']) {
     const phaseRows = matches
       .filter(m => m.phase === phase)
       .sort(matchSortForRefs);
 
-    // Les équipes ne doivent arbitrer que dans leur poule et jamais leur propre match.
     const pools = [...new Set(phaseRows.map(m => m.pool).filter(Boolean))].sort();
     for (const pool of pools) {
       const poolRows = phaseRows.filter(m => m.pool === pool);
       const poolTeams = teamsFromMatchPool(phase, pool);
-      const poolCounts = {};
-      poolTeams.forEach(t => poolCounts[t] = 0);
+      const localCounts = {};
+      poolTeams.forEach(t => localCounts[t] = 0);
 
       for (const m of poolRows) {
         const available = poolTeams.filter(t => t !== m.team_a && t !== m.team_b);
-        const referee = pickBalancedReferee(available, poolCounts);
+        const referee = available.sort((a,b) =>
+          (cumulativeCounts[a] || 0) - (cumulativeCounts[b] || 0) ||
+          (localCounts[a] || 0) - (localCounts[b] || 0) ||
+          String(a).localeCompare(String(b))
+        )[0] || null;
         if (referee) {
-          poolCounts[referee] = (poolCounts[referee] || 0) + 1;
+          localCounts[referee] = (localCounts[referee] || 0) + 1;
+          cumulativeCounts[referee] = (cumulativeCounts[referee] || 0) + 1;
           phaseCounts[phase][referee] = (phaseCounts[phase][referee] || 0) + 1;
         }
         await client.from('matches').update({
