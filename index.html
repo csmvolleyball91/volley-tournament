@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tournoi Volley Live</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>🏐 Tournoi Volley Live</h1>
+  <p class="small">24 équipes · 6 terrains · brassage 1 · scores partagés en live</p>
+
+  <div class="grid">
+    <button onclick="show('teams')">Voir mes matchs</button>
+    <button onclick="show('planning')">Planning</button>
+    <button onclick="show('standings')">Classements</button>
+    <button onclick="show('score')">Saisie terrain</button>
+  </div>
+
+  <div id="teams" class="section hidden">
+    <h2>Voir mes matchs</h2>
+    <select id="teamSelect"></select>
+    <div id="teamMatches"></div>
+  </div>
+
+  <div id="planning" class="section hidden">
+    <h2>Planning</h2>
+    <select id="courtFilter">
+      <option value="">Tous les terrains</option>
+      <option value="1">Terrain 1</option>
+      <option value="2">Terrain 2</option>
+      <option value="3">Terrain 3</option>
+      <option value="4">Terrain 4</option>
+      <option value="5">Terrain 5</option>
+      <option value="6">Terrain 6</option>
+    </select>
+    <div id="planningView"></div>
+  </div>
+
+  <div id="standings" class="section hidden">
+    <h2>Classements</h2>
+    <div id="standingsView"></div>
+  </div>
+
+  <div id="score" class="section hidden">
+    <h2>Saisie terrain</h2>
+    <input id="courtCode" placeholder="Code terrain : T1 à T6" />
+    <button onclick="loadCourt()">Ouvrir terrain</button>
+    <div id="courtView"></div>
+  </div>
+
+  <script>
+    window.SUPABASE_URL = "https://oqabkmiwpefhitwwzrqk.supabase.co";
+    window.SUPABASE_KEY = "sb_publishable_OAwnRz5aJVgL_JbVJSctXg__CuQ1kvN";
+  </script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+body {
+  font-family: Arial, sans-serif;
+  background: #fafafa;
+  max-width: 920px;
+  margin: auto;
+  padding: 16px;
+}
+h1 { font-size: 25px; margin-bottom: 4px; }
+h2 { font-size: 21px; margin-top: 22px; }
+.small { color: #666; font-size: 14px; }
+.hidden { display: none; }
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 14px 0;
+}
+button, select, input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 17px;
+  padding: 12px;
+  margin: 6px 0;
+  border-radius: 9px;
+  border: 1px solid #bbb;
+}
+button {
+  background: #111;
+  color: white;
+  border: none;
+  font-weight: bold;
+}
+button.secondary { background: #444; }
+button.win { background: #0f766e; }
+button.danger { background: #b91c1c; }
+.card {
+  background: white;
+  border: 1px solid #ddd;
+  padding: 13px;
+  border-radius: 12px;
+  margin: 9px 0;
+}
+.score {
+  font-size: 32px;
+  font-weight: bold;
+  text-align: center;
+  margin: 8px 0;
+}
+.ok { color: green; font-weight: bold; }
+.warn { color: #b45309; font-weight: bold; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  margin-bottom: 20px;
+}
+th, td {
+  border-bottom: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+  font-size: 14px;
+}
+th { background: #f1f1f1; }
+@media (min-width: 720px) {
+  .grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
+}
