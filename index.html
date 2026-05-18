@@ -67,6 +67,7 @@
   <div id="score" class="section hidden">
     <h2>Saisie terrain</h2>
     <input id="courtCode" placeholder="Code terrain : T1 à T6" />
+    <input id="matchCode" placeholder="Code match à 6 chiffres" inputmode="numeric" maxlength="6" />
     <button onclick="loadCourt()">Ouvrir terrain</button>
     <div id="courtView"></div>
   </div>
@@ -94,12 +95,17 @@
       <button onclick="regenerateBrassage1()">Régénérer brassage 1 avec horaires</button>
       <button onclick="generateBrassage2()">Générer brassage 2</button>
       <button onclick="generateBrackets()">Générer tableaux</button>
+      <button onclick="assignRefsAndCodes()">Attribuer arbitres + codes aux matchs existants</button>
       <button class="danger" onclick="resetScores()">Reset tous les scores</button>
 
       <h3>Équipes</h3>
       <p class="small">Tu pourras remplacer les noms la veille ici, sans toucher au code.</p>
       <div id="teamsAdmin"></div>
       <button onclick="saveTeams()">Sauvegarder noms équipes</button>
+
+      <h3>Codes matchs</h3>
+      <p class="small">Codes visibles seulement en admin. Tu peux les communiquer aux équipes arbitres.</p>
+      <div id="codesAdmin"></div>
     </div>
 
     <div id="adminMsg" class="card"></div>
