@@ -36,6 +36,7 @@ function renderAll() {
   renderPlanning();
   renderStandings();
   renderAdmin();
+  renderBrackets();
   if (currentSection === 'score') loadCourt(false);
 }
 
@@ -170,13 +171,29 @@ function loadCourt(showError = true) {
     return;
   }
   const courtMatches = matches
-    .filter(m => m.court === court && m.status !== 'done')
-    .sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || ''));
+    .filter(m => m.court === court && m.status !== 'done' && m.team_a && m.team_b)
+    .sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || '') || (a.match_order || 0) - (b.match_order || 0));
   const m = courtMatches[0] || matches.filter(m => m.court === court).slice(-1)[0];
   if (!m) {
     div.innerHTML = '<div class="card">Aucun match trouvé pour ce terrain.</div>';
     return;
   }
+
+  if ((m.phase || '').includes('Tableau') || m.bracket) {
+    div.innerHTML = `
+      <div class="card">
+        <b>Terrain ${court} — Match #${m.id}</b><br>
+        ${m.scheduled_time || 'Horaire à définir'} · ${m.phase} · ${m.round || ''}
+        <h2>${m.team_a || 'À définir'}</h2>
+        <div class="score">VS</div>
+        <h2>${m.team_b || 'À définir'}</h2>
+        <button class="win" onclick="winnerButton(${m.id}, 'a')">${m.team_a} gagne</button>
+        <button class="win" onclick="winnerButton(${m.id}, 'b')">${m.team_b} gagne</button>
+      </div>
+    `;
+    return;
+  }
+
   div.innerHTML = `
     <div class="card">
       <b>Terrain ${court} — Match #${m.id}</b><br>
@@ -228,6 +245,7 @@ function unlockAdmin() {
     document.getElementById('adminPanel').classList.remove('hidden');
     document.getElementById('adminMsg').innerText = 'Admin déverrouillé ✅';
     renderAdmin();
+  renderBrackets();
   } else {
     document.getElementById('adminMsg').innerText = 'Code admin incorrect.';
   }
@@ -412,6 +430,201 @@ async function generateBrassage2() {
   await loadData();
 }
 
+
+
+function aggregatePhaseStats(phase) {
+  const stats = {};
+  teams.forEach(t => stats[t.name] = { score:0, diff:0, pm:0, v:0, d:0, mj:0 });
+  matches.filter(m => m.phase === phase).forEach(m => {
+    if (m.score_a === null || m.score_b === null) return;
+    if (!stats[m.team_a]) stats[m.team_a] = { score:0, diff:0, pm:0, v:0, d:0, mj:0 };
+    if (!stats[m.team_b]) stats[m.team_b] = { score:0, diff:0, pm:0, v:0, d:0, mj:0 };
+    const da = m.score_a - m.score_b;
+    const db = m.score_b - m.score_a;
+    stats[m.team_a].mj++; stats[m.team_b].mj++;
+    stats[m.team_a].pm += m.score_a; stats[m.team_b].pm += m.score_b;
+    stats[m.team_a].diff += da; stats[m.team_b].diff += db;
+    if (m.score_a > m.score_b) { stats[m.team_a].v++; stats[m.team_b].d++; stats[m.team_a].score += 10000 + da; stats[m.team_b].score += db; }
+    if (m.score_b > m.score_a) { stats[m.team_b].v++; stats[m.team_a].d++; stats[m.team_b].score += 10000 + db; stats[m.team_a].score += da; }
+  });
+  return stats;
+}
+
+function globalRanking() {
+  const b2 = aggregatePhaseStats('Brassage 2');
+  const b1 = aggregatePhaseStats('Brassage 1');
+  return teams.map(t => ({
+    name: t.name,
+    b2Score: b2[t.name]?.score ?? 0,
+    b1Score: b1[t.name]?.score ?? 0,
+    b2Diff: b2[t.name]?.diff ?? 0,
+    b2Pm: b2[t.name]?.pm ?? 0
+  })).sort((a,b) =>
+    b.b2Score - a.b2Score ||
+    b.b1Score - a.b1Score ||
+    b.b2Diff - a.b2Diff ||
+    b.b2Pm - a.b2Pm
+  );
+}
+
+function renderBrackets() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return;
+
+  const ranking = globalRanking();
+  rankDiv.innerHTML = `<h3>Classement général provisoire</h3><table>
+    <tr><th>#</th><th>Équipe</th><th>B2</th><th>B1</th><th>Diff B2</th></tr>
+    ${ranking.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.name}</b></td><td>${r.b2Score}</td><td>${r.b1Score}</td><td>${r.b2Diff}</td></tr>`).join('')}
+  </table>`;
+
+  const bracketMatches = matches.filter(m => m.bracket).sort((a,b) =>
+    (a.bracket || '').localeCompare(b.bracket || '') ||
+    (a.match_order || 0) - (b.match_order || 0)
+  );
+
+  if (!bracketMatches.length) {
+    bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+    return;
+  }
+
+  const groups = {};
+  bracketMatches.forEach(m => {
+    const key = `${m.bracket} — ${m.round}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(m);
+  });
+
+  bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
+    <div class="bracket-title">${title}</div>
+    ${list.map(m => `<div class="card">
+      <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${m.scheduled_time || 'Horaire à définir'}</span><br>
+      <b>${m.team_a || 'À définir'}</b> vs <b>${m.team_b || 'À définir'}</b><br>
+      Gagnant : ${m.winner || '-'} · ${statusText(m)}
+    </div>`).join('')}
+  `).join('');
+}
+
+function bracketRowsFromRanking(ranking) {
+  const mainSeeds = ranking.slice(0,16).map(x => x.name);
+  const consSeeds = ranking.slice(16,24).map(x => x.name);
+  const rows = [];
+
+  const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
+  mainPairs.forEach((p, idx) => {
+    rows.push({
+      phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order: idx+1,
+      court: (idx % 6) + 1, scheduled_time: null,
+      team_a: mainSeeds[p[0]-1], team_b: mainSeeds[p[1]-1],
+      status:'pending', next_match_order: 9 + Math.floor(idx/2), next_slot: idx % 2 === 0 ? 'A' : 'B'
+    });
+  });
+
+  // Quarts 9-12
+  for (let i=0;i<4;i++) rows.push({
+    phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order: 9+i,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending', next_match_order: 13 + Math.floor(i/2), next_slot: i % 2 === 0 ? 'A' : 'B'
+  });
+
+  // Demis 13-14, losers to 16
+  for (let i=0;i<2;i++) rows.push({
+    phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order: 13+i,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending', next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
+    loser_next_match_order: 16, loser_next_slot: i === 0 ? 'A' : 'B'
+  });
+
+  rows.push({
+    phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order: 15,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending'
+  });
+  rows.push({
+    phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order: 16,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending'
+  });
+
+  const consPairs = [[17,24],[20,21],[19,22],[18,23]];
+  consPairs.forEach((p, idx) => {
+    rows.push({
+      phase:'Consolante', bracket:'Consolante', round:'Quart', match_order: 101+idx,
+      court: ((idx+2) % 6) + 1, scheduled_time: null,
+      team_a: ranking[p[0]-1].name, team_b: ranking[p[1]-1].name,
+      status:'pending', next_match_order: 105 + Math.floor(idx/2), next_slot: idx % 2 === 0 ? 'A' : 'B'
+    });
+  });
+  for (let i=0;i<2;i++) rows.push({
+    phase:'Consolante', bracket:'Consolante', round:'Demi', match_order: 105+i,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending', next_match_order: 107, next_slot: i === 0 ? 'A' : 'B'
+  });
+  rows.push({
+    phase:'Consolante', bracket:'Consolante', round:'Finale', match_order: 107,
+    court: null, scheduled_time: null, team_a:'À définir', team_b:'À définir',
+    status:'pending'
+  });
+
+  return rows;
+}
+
+async function generateBrackets() {
+  if (!adminUnlocked) return;
+
+  const b2Matches = matches.filter(m => m.phase === 'Brassage 2');
+  if (b2Matches.length !== 36) {
+    document.getElementById('adminMsg').innerText = `Impossible : il faut 36 matchs en Brassage 2, trouvés ${b2Matches.length}.`;
+    return;
+  }
+  const unfinished = b2Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
+  if (unfinished.length > 0) {
+    document.getElementById('adminMsg').innerText = `Impossible : ${unfinished.length} match(s) de Brassage 2 ne sont pas terminés.`;
+    return;
+  }
+
+  if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+
+  const ranking = globalRanking();
+  const rows = bracketRowsFromRanking(ranking);
+
+  await client.from('matches').delete().in('phase', ['Tableau principal','Consolante']);
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : `Tableaux générés ✅ ${rows.length} matchs créés.`;
+  await loadData();
+}
+
+async function winnerButton(id, side) {
+  const m = matches.find(x => x.id === id);
+  if (!m || !m.bracket) return;
+
+  const winner = side === 'a' ? m.team_a : m.team_b;
+  const loser = side === 'a' ? m.team_b : m.team_a;
+
+  await client.from('matches').update({ winner, status:'done' }).eq('id', id);
+
+  if (m.next_match_order) {
+    const next = matches.find(x => x.match_order === m.next_match_order && x.bracket === m.bracket);
+    if (next) {
+      const payload = {};
+      if (m.next_slot === 'A') payload.team_a = winner;
+      if (m.next_slot === 'B') payload.team_b = winner;
+      await client.from('matches').update(payload).eq('id', next.id);
+    }
+  }
+
+  if (m.loser_next_match_order) {
+    const nextLoser = matches.find(x => x.match_order === m.loser_next_match_order && x.bracket === m.bracket);
+    if (nextLoser) {
+      const payload = {};
+      if (m.loser_next_slot === 'A') payload.team_a = loser;
+      if (m.loser_next_slot === 'B') payload.team_b = loser;
+      await client.from('matches').update(payload).eq('id', nextLoser.id);
+    }
+  }
+
+  await loadData();
+}
 
 client.channel('matches-live')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => loadData())
