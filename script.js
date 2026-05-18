@@ -1,3 +1,19 @@
+window.onerror = function(message, source, lineno, colno) {
+  var box = document.getElementById('appError');
+  if (box) {
+    box.style.display = 'block';
+    box.innerText = 'Erreur navigateur : ' + message + ' (ligne ' + lineno + ')';
+  }
+};
+
+if (!window.supabase) {
+  var preloadError = document.getElementById('appError');
+  if (preloadError) {
+    preloadError.style.display = 'block';
+    preloadError.innerText = 'Supabase ne s\'est pas chargé. Vérifie la connexion internet ou le blocage Safari.';
+  }
+}
+
 const client = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
 
 let teams = [];
@@ -88,7 +104,7 @@ function servingText(m) {
 
 function syncServiceHistoryAfterPoint(m, side, delta, newA, newB) {
   let history = getServiceHistory(m.id);
-  const targetTotal = (newA ?? 0) + (newB ?? 0);
+  const targetTotal = ((newA == null ? 0 : newA) + (newB == null ? 0 : newB));
   if (delta > 0) {
     history.push(side);
   } else if (delta < 0) {
@@ -138,8 +154,10 @@ function renderTeamMatches() {
 function renderPlanning() {
   const div = document.getElementById('planningView');
   if (!div) return;
-  const court = document.getElementById('courtFilter')?.value || '';
-  const phase = document.getElementById('phaseFilter')?.value || '';
+  const courtEl = document.getElementById('courtFilter');
+  const court = courtEl ? courtEl.value : '';
+  const phaseEl = document.getElementById('phaseFilter');
+  const phase = phaseEl ? phaseEl.value : '';
   let list = [...matches];
   if (court) list = list.filter(m => String(m.court) === court);
   if (phase) list = list.filter(m => m.phase === phase);
@@ -219,7 +237,8 @@ function courtFromCode() {
 
 
 function enteredMatchCode() {
-  return document.getElementById('matchCode')?.value.trim() || '';
+  const el = document.getElementById('matchCode');
+  return el ? el.value.trim() : '';
 }
 
 function isBracketMatch(m) {
@@ -282,7 +301,7 @@ function loadCourt(showError = true) {
       <div class="score-half team-a">
         <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
         <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', 1)"` : 'disabled'}>+</button>
-        <div class="mega-score">${m.score_a ?? 0}</div>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
         <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', -1)"` : 'disabled'}>−</button>
       </div>
 
@@ -294,7 +313,7 @@ function loadCourt(showError = true) {
       <div class="score-half team-b">
         <div class="team-title">${m.team_b}${serviceBall(m, 'b')}</div>
         <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', 1)"` : 'disabled'}>+</button>
-        <div class="mega-score">${m.score_b ?? 0}</div>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
         <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', -1)"` : 'disabled'}>−</button>
       </div>
     </div>
@@ -305,8 +324,8 @@ function loadCourt(showError = true) {
 async function changePoint(id, side, delta) {
   const m = matches.find(x => x.id === id);
   if (!m) return;
-  const currentA = m.score_a ?? 0;
-  const currentB = m.score_b ?? 0;
+  const currentA = m.score_a == null ? 0 : m.score_a;
+  const currentB = m.score_b == null ? 0 : m.score_b;
   const newA = side === 'a' ? Math.max(0, currentA + delta) : currentA;
   const newB = side === 'b' ? Math.max(0, currentB + delta) : currentB;
   const { error } = await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
@@ -320,8 +339,8 @@ async function changePoint(id, side, delta) {
 
 async function addPoint(id, side) {
   const m = matches.find(x => x.id === id);
-  const newA = (m.score_a ?? 0) + (side === 'a' ? 1 : 0);
-  const newB = (m.score_b ?? 0) + (side === 'b' ? 1 : 0);
+  const newA = (m.score_a == null ? 0 : m.score_a) + (side === 'a' ? 1 : 0);
+  const newB = (m.score_b == null ? 0 : m.score_b) + (side === 'b' ? 1 : 0);
   const { error } = await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
   if (error) {
     alert('Erreur mise à jour score : ' + error.message);
@@ -332,22 +351,22 @@ async function addPoint(id, side) {
 
 async function undoPoint(id) {
   const m = matches.find(x => x.id === id);
-  if ((m.score_a ?? 0) >= (m.score_b ?? 0) && (m.score_a ?? 0) > 0) {
-    await client.from('matches').update({ score_a: (m.score_a ?? 0) - 1 }).eq('id', id);
-  } else if ((m.score_b ?? 0) > 0) {
-    await client.from('matches').update({ score_b: (m.score_b ?? 0) - 1 }).eq('id', id);
+  if ((m.score_a == null ? 0 : m.score_a) >= (m.score_b == null ? 0 : m.score_b) && (m.score_a == null ? 0 : m.score_a) > 0) {
+    await client.from('matches').update({ score_a: (m.score_a == null ? 0 : m.score_a) - 1 }).eq('id', id);
+  } else if ((m.score_b == null ? 0 : m.score_b) > 0) {
+    await client.from('matches').update({ score_b: (m.score_b == null ? 0 : m.score_b) - 1 }).eq('id', id);
   }
   await loadData();
 }
 
 async function finishMatch(id) {
   const m = matches.find(x => x.id === id);
-  if ((m.score_a ?? 0) === (m.score_b ?? 0)) {
+  if ((m.score_a == null ? 0 : m.score_a) === (m.score_b == null ? 0 : m.score_b)) {
     alert('Match nul impossible : ajoute un point avant de terminer.');
     return;
   }
-  if (!confirm(`Confirmer le score ?\n${m.team_a}: ${m.score_a ?? 0}\n${m.team_b}: ${m.score_b ?? 0}`)) return;
-  const winner = (m.score_a ?? 0) > (m.score_b ?? 0) ? m.team_a : m.team_b;
+  if (!confirm(`Confirmer le score ?\n${m.team_a}: ${m.score_a == null ? 0 : m.score_a}\n${m.team_b}: ${m.score_b == null ? 0 : m.score_b}`)) return;
+  const winner = (m.score_a == null ? 0 : m.score_a) > (m.score_b == null ? 0 : m.score_b) ? m.team_a : m.team_b;
   await client.from('matches').update({ status: 'done', winner }).eq('id', id);
   await loadData();
 }
@@ -731,10 +750,10 @@ function globalRanking() {
   const b1 = aggregatePhaseStats('Brassage 1');
   return teams.map(t => ({
     name: t.name,
-    b2Score: b2[t.name]?.score ?? 0,
-    b1Score: b1[t.name]?.score ?? 0,
-    b2Diff: b2[t.name]?.diff ?? 0,
-    b2Pm: b2[t.name]?.pm ?? 0
+    b2Score: (b2[t.name] && b2[t.name].score != null ? b2[t.name].score : 0),
+    b1Score: (b1[t.name] && b1[t.name].score != null ? b1[t.name].score : 0),
+    b2Diff: (b2[t.name] && b2[t.name].diff != null ? b2[t.name].diff : 0),
+    b2Pm: (b2[t.name] && b2[t.name].pm != null ? b2[t.name].pm : 0)
   })).sort((a,b) =>
     b.b2Score - a.b2Score ||
     b.b1Score - a.b1Score ||
@@ -1006,9 +1025,9 @@ function renderPublicView() {
     const next = cm[1];
     return `<div class="card"><h3>Terrain ${c}</h3>
       <b>EN COURS</b><br>${now ? `${now.team_a} vs ${now.team_b}` : 'Aucun'}<br>
-      <small>Arbitre : ${now?.referee_team || 'Libre'}</small><hr>
+      <small>Arbitre : ${now && now.referee_team ? now.referee_team : 'Libre'}</small><hr>
       <b>À SUIVRE</b><br>${next ? `${next.team_a} vs ${next.team_b}` : '—'}<br>
-      <small>Arbitre : ${next?.referee_team || 'Libre'}</small>
+      <small>Arbitre : ${next && next.referee_team ? next.referee_team : 'Libre'}</small>
     </div>`;
   }).join('');
 }
