@@ -2,10 +2,16 @@ const client = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
 
 let teams = [];
 let matches = [];
+let settings = null;
 let currentSection = null;
+let adminUnlocked = false;
 
 async function loadData() {
-  const { data: t, error: te } = await client.from('teams').select('*').order('name');
+  const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
+  if (se) alert('Erreur settings: ' + se.message);
+  settings = s;
+
+  const { data: t, error: te } = await client.from('teams').select('*').order('id');
   if (te) alert('Erreur teams: ' + te.message);
   teams = t || [];
 
@@ -24,11 +30,19 @@ function show(id) {
 }
 
 function renderAll() {
+  renderSubtitle();
   renderTeamSelect();
   renderTeamMatches();
   renderPlanning();
   renderStandings();
+  renderAdmin();
   if (currentSection === 'score') loadCourt(false);
+}
+
+function renderSubtitle() {
+  if (!settings) return;
+  document.getElementById('subtitle').innerText =
+    `${settings.teams_count} équipes · ${settings.courts_count} terrains · départ ${settings.start_time} · ${settings.match_duration} min + ${settings.break_duration} min`;
 }
 
 function scoreText(m) {
@@ -67,18 +81,21 @@ function renderTeamMatches() {
   `).join('');
 }
 
-document.getElementById('courtFilter').onchange = renderPlanning;
-
 function renderPlanning() {
   const div = document.getElementById('planningView');
-  const filter = document.getElementById('courtFilter').value;
-  let list = matches;
-  if (filter) list = list.filter(m => String(m.court) === filter);
+  if (!div) return;
+  const court = document.getElementById('courtFilter')?.value || '';
+  const phase = document.getElementById('phaseFilter')?.value || '';
+  let list = [...matches];
+  if (court) list = list.filter(m => String(m.court) === court);
+  if (phase) list = list.filter(m => m.phase === phase);
+  list.sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || '') || Number(a.court)-Number(b.court));
   div.innerHTML = `<table>
-    <tr><th>Heure</th><th>Terrain</th><th>Poule</th><th>Match</th><th>Score</th><th>Statut</th></tr>
+    <tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Score</th><th>Statut</th></tr>
     ${list.map(m => `<tr>
       <td>${m.scheduled_time || ''}</td>
       <td>T${m.court}</td>
+      <td>${m.phase}</td>
       <td>${m.pool || '-'}</td>
       <td>#${m.id} ${m.team_a} vs ${m.team_b}</td>
       <td>${scoreText(m)}</td>
@@ -87,12 +104,16 @@ function renderPlanning() {
   </table>`;
 }
 
-function poolStats(pool) {
-  const poolTeams = teams.filter(t => t.initial_pool === pool).map(t => t.name);
-  const stats = {};
-  poolTeams.forEach(name => stats[name] = { mj:0, v:0, d:0, diff:0, pm:0, pe:0, score:0 });
+function poolStats(phase, pool) {
+  const teamNames = new Set();
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
+    teamNames.add(m.team_a); teamNames.add(m.team_b);
+  });
 
-  matches.filter(m => m.phase === 'Brassage 1' && m.pool === pool).forEach(m => {
+  const stats = {};
+  [...teamNames].forEach(name => stats[name] = { mj:0, v:0, d:0, diff:0, pm:0, pe:0, score:0 });
+
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
     if (m.score_a === null || m.score_b === null) return;
     if (!stats[m.team_a] || !stats[m.team_b]) return;
     const da = m.score_a - m.score_b;
@@ -100,8 +121,14 @@ function poolStats(pool) {
     stats[m.team_a].mj++; stats[m.team_b].mj++;
     stats[m.team_a].pm += m.score_a; stats[m.team_a].pe += m.score_b; stats[m.team_a].diff += da;
     stats[m.team_b].pm += m.score_b; stats[m.team_b].pe += m.score_a; stats[m.team_b].diff += db;
-    if (m.score_a > m.score_b) { stats[m.team_a].v++; stats[m.team_a].score += 10000 + da; stats[m.team_b].d++; stats[m.team_b].score += db; }
-    if (m.score_b > m.score_a) { stats[m.team_b].v++; stats[m.team_b].score += 10000 + db; stats[m.team_a].d++; stats[m.team_a].score += da; }
+    if (m.score_a > m.score_b) {
+      stats[m.team_a].v++; stats[m.team_a].score += 10000 + da;
+      stats[m.team_b].d++; stats[m.team_b].score += db;
+    }
+    if (m.score_b > m.score_a) {
+      stats[m.team_b].v++; stats[m.team_b].score += 10000 + db;
+      stats[m.team_a].d++; stats[m.team_a].score += da;
+    }
   });
 
   return Object.entries(stats).sort((a,b) => b[1].score - a[1].score || b[1].diff - a[1].diff || b[1].pm - a[1].pm);
@@ -109,17 +136,24 @@ function poolStats(pool) {
 
 function renderStandings() {
   const div = document.getElementById('standingsView');
-  const pools = ['A','B','C','D','E','F'];
-  div.innerHTML = pools.map(pool => {
-    const rows = poolStats(pool).map(([name,s],i) => `
-      <tr>
-        <td>${i+1}</td><td><b>${name}</b></td><td>${s.score}</td><td>${s.mj}</td>
-        <td>${s.v}</td><td>${s.d}</td><td>${s.diff}</td><td>${s.pm}</td>
-      </tr>
-    `).join('');
-    return `<h3>Poule ${pool}</h3>
-      <table><tr><th>#</th><th>Équipe</th><th>Score</th><th>MJ</th><th>V</th><th>D</th><th>Diff</th><th>PM</th></tr>${rows}</table>`;
-  }).join('');
+  if (!div) return;
+  const phases = [...new Set(matches.map(m => m.phase))].filter(p => p.includes('Brassage'));
+  let html = '';
+  phases.forEach(phase => {
+    html += `<h2>${phase}</h2>`;
+    const pools = [...new Set(matches.filter(m => m.phase === phase).map(m => m.pool))].sort();
+    pools.forEach(pool => {
+      const rows = poolStats(phase, pool).map(([name,s],i) => `
+        <tr>
+          <td>${i+1}</td><td><b>${name}</b></td><td>${s.score}</td><td>${s.mj}</td>
+          <td>${s.v}</td><td>${s.d}</td><td>${s.diff}</td><td>${s.pm}</td>
+        </tr>
+      `).join('');
+      html += `<h3>Poule ${pool}</h3>
+        <table><tr><th>#</th><th>Équipe</th><th>Score</th><th>MJ</th><th>V</th><th>D</th><th>Diff</th><th>PM</th></tr>${rows}</table>`;
+    });
+  });
+  div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
 }
 
 function courtFromCode() {
@@ -135,7 +169,9 @@ function loadCourt(showError = true) {
     if (showError) div.innerHTML = '<div class="card">Code incorrect. Utilise T1 à T6.</div>';
     return;
   }
-  const courtMatches = matches.filter(m => m.court === court && m.status !== 'done');
+  const courtMatches = matches
+    .filter(m => m.court === court && m.status !== 'done')
+    .sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || ''));
   const m = courtMatches[0] || matches.filter(m => m.court === court).slice(-1)[0];
   if (!m) {
     div.innerHTML = '<div class="card">Aucun match trouvé pour ce terrain.</div>';
@@ -176,8 +212,119 @@ async function undoPoint(id) {
 
 async function finishMatch(id) {
   const m = matches.find(x => x.id === id);
+  if ((m.score_a ?? 0) === (m.score_b ?? 0)) {
+    alert('Match nul impossible : ajoute un point avant de terminer.');
+    return;
+  }
   const winner = (m.score_a ?? 0) > (m.score_b ?? 0) ? m.team_a : m.team_b;
   await client.from('matches').update({ status: 'done', winner }).eq('id', id);
+  await loadData();
+}
+
+function unlockAdmin() {
+  const code = document.getElementById('adminCode').value;
+  if (code === settings.admin_code) {
+    adminUnlocked = true;
+    document.getElementById('adminPanel').classList.remove('hidden');
+    document.getElementById('adminMsg').innerText = 'Admin déverrouillé ✅';
+    renderAdmin();
+  } else {
+    document.getElementById('adminMsg').innerText = 'Code admin incorrect.';
+  }
+}
+
+function renderAdmin() {
+  if (!settings) return;
+  document.getElementById('cfgStart').value = settings.start_time || '09:30';
+  document.getElementById('cfgDuration').value = settings.match_duration || 12;
+  document.getElementById('cfgBreak').value = settings.break_duration || 3;
+  document.getElementById('cfgRoundBreak').value = settings.break_between_rounds || 15;
+  document.getElementById('cfgCourts').value = settings.courts_count || 6;
+
+  const div = document.getElementById('teamsAdmin');
+  if (!div) return;
+  div.innerHTML = teams.map(t => `
+    <div class="team-edit">
+      <span>${t.initial_pool}${String(t.id).padStart(2,'0')}</span>
+      <input data-team-id="${t.id}" value="${t.name}" />
+    </div>
+  `).join('');
+}
+
+async function saveSettings() {
+  if (!adminUnlocked) return;
+  const payload = {
+    start_time: document.getElementById('cfgStart').value,
+    match_duration: Number(document.getElementById('cfgDuration').value),
+    break_duration: Number(document.getElementById('cfgBreak').value),
+    break_between_rounds: Number(document.getElementById('cfgRoundBreak').value),
+    courts_count: Number(document.getElementById('cfgCourts').value),
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await client.from('settings').update(payload).eq('id', 1);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Configuration sauvegardée ✅';
+  await loadData();
+}
+
+async function saveTeams() {
+  if (!adminUnlocked) return;
+  const inputs = [...document.querySelectorAll('[data-team-id]')];
+  for (const input of inputs) {
+    await client.from('teams').update({ name: input.value }).eq('id', Number(input.dataset.teamId));
+  }
+  document.getElementById('adminMsg').innerText = 'Noms équipes sauvegardés ✅';
+  await loadData();
+}
+
+function addMinutes(time, minutes) {
+  const [h,m] = time.split(':').map(Number);
+  const total = h*60 + m + minutes;
+  return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+}
+
+function generateBrassage1Rows() {
+  const pairIdx = [[0,1],[2,3],[0,2],[1,3],[0,3],[1,2]];
+  const rows = [];
+  const pools = ['A','B','C','D','E','F'];
+  const slotStep = Number(settings.match_duration) + Number(settings.break_duration);
+
+  pools.forEach((pool, poolIndex) => {
+    const poolTeams = teams.filter(t => t.initial_pool === pool).sort((a,b) => a.id-b.id).map(t => t.name);
+    pairIdx.forEach((pair, slot) => {
+      rows.push({
+        phase: 'Brassage 1',
+        pool,
+        court: poolIndex + 1,
+        scheduled_time: addMinutes(settings.start_time, slot * slotStep),
+        team_a: poolTeams[pair[0]],
+        team_b: poolTeams[pair[1]],
+        score_a: null,
+        score_b: null,
+        winner: null,
+        status: 'pending'
+      });
+    });
+  });
+  return rows;
+}
+
+async function regenerateBrassage1() {
+  if (!adminUnlocked) return;
+  if (!confirm('Régénérer brassage 1 ? Les matchs Brassage 1 existants seront supprimés.')) return;
+  await client.from('matches').delete().eq('phase', 'Brassage 1');
+  const rows = generateBrassage1Rows();
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Brassage 1 régénéré ✅';
+  await loadData();
+}
+
+async function resetScores() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset tous les scores ?')) return;
+  const { error } = await client.from('matches').update({
+    score_a: null, score_b: null, winner: null, status: 'pending'
+  }).neq('id', 0);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Scores reset ✅';
   await loadData();
 }
 
