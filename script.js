@@ -1731,65 +1731,78 @@ function renderBrackets() {
 }
 
 function bracketRowsFromRanking(ranking) {
-  const mainSeeds = ranking.slice(0,16).map(x => x.name);
-  const consSeeds = ranking.slice(16,24).map(x => x.name);
+  // Génération tableaux fiabilisée : aucun match ne part sans terrain.
+  // Classement utilisé : B2 en priorité, B1 en tie-break (fait dans globalRanking()).
   const rows = [];
+  const courtsCount = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
+  const courtFor = function(order) { return ((Number(order || 1) - 1) % courtsCount) + 1; };
+  const seedName = function(seedIndex) {
+    return ranking[seedIndex - 1] && ranking[seedIndex - 1].name ? ranking[seedIndex - 1].name : 'À définir';
+  };
+  const safeRow = function(row) {
+    const order = Number(row.match_order || rows.length + 1);
+    return Object.assign({
+      court: courtFor(order),
+      scheduled_time: null,
+      status: 'pending',
+      referee_team: null,
+      access_code: null
+    }, row, {
+      court: Number(row.court || courtFor(order)) || 1
+    });
+  };
 
   const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
-  mainPairs.forEach((p, idx) => {
-    rows.push({
-      phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order: idx+1,
-      court: (idx % 6) + 1, scheduled_time: null,
-      team_a: mainSeeds[p[0]-1], team_b: mainSeeds[p[1]-1],
-      status:'pending', next_match_order: 9 + Math.floor(idx/2), next_slot: idx % 2 === 0 ? 'A' : 'B'
-    });
+  mainPairs.forEach(function(p, idx) {
+    rows.push(safeRow({
+      phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order: idx + 1,
+      team_a: seedName(p[0]), team_b: seedName(p[1]),
+      next_match_order: 9 + Math.floor(idx / 2), next_slot: idx % 2 === 0 ? 'A' : 'B'
+    }));
   });
 
-  // Quarts 9-12
-  for (let i=0;i<4;i++) rows.push({
-    phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order: 9+i,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending', next_match_order: 13 + Math.floor(i/2), next_slot: i % 2 === 0 ? 'A' : 'B'
-  });
+  for (let i = 0; i < 4; i++) rows.push(safeRow({
+    phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order: 9 + i,
+    team_a:'À définir', team_b:'À définir',
+    next_match_order: 13 + Math.floor(i / 2), next_slot: i % 2 === 0 ? 'A' : 'B'
+  }));
 
-  // Demis 13-14, losers to 16
-  for (let i=0;i<2;i++) rows.push({
-    phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order: 13+i,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending', next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
+  for (let i = 0; i < 2; i++) rows.push(safeRow({
+    phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order: 13 + i,
+    team_a:'À définir', team_b:'À définir',
+    next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
     loser_next_match_order: 16, loser_next_slot: i === 0 ? 'A' : 'B'
-  });
+  }));
 
-  rows.push({
+  rows.push(safeRow({
     phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order: 15,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending'
-  });
-  rows.push({
+    team_a:'À définir', team_b:'À définir'
+  }));
+
+  rows.push(safeRow({
     phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order: 16,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending'
-  });
+    team_a:'À définir', team_b:'À définir'
+  }));
 
   const consPairs = [[17,24],[20,21],[19,22],[18,23]];
-  consPairs.forEach((p, idx) => {
-    rows.push({
-      phase:'Consolante', bracket:'Consolante', round:'Quart', match_order: 101+idx,
-      court: ((idx+2) % 6) + 1, scheduled_time: null,
-      team_a: ranking[p[0]-1].name, team_b: ranking[p[1]-1].name,
-      status:'pending', next_match_order: 105 + Math.floor(idx/2), next_slot: idx % 2 === 0 ? 'A' : 'B'
-    });
+  consPairs.forEach(function(p, idx) {
+    rows.push(safeRow({
+      phase:'Consolante', bracket:'Consolante', round:'Quart', match_order: 101 + idx,
+      team_a: seedName(p[0]), team_b: seedName(p[1]),
+      next_match_order: 105 + Math.floor(idx / 2), next_slot: idx % 2 === 0 ? 'A' : 'B'
+    }));
   });
-  for (let i=0;i<2;i++) rows.push({
-    phase:'Consolante', bracket:'Consolante', round:'Demi', match_order: 105+i,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending', next_match_order: 107, next_slot: i === 0 ? 'A' : 'B'
-  });
-  rows.push({
+
+  for (let i = 0; i < 2; i++) rows.push(safeRow({
+    phase:'Consolante', bracket:'Consolante', round:'Demi', match_order: 105 + i,
+    team_a:'À définir', team_b:'À définir',
+    next_match_order: 107, next_slot: i === 0 ? 'A' : 'B'
+  }));
+
+  rows.push(safeRow({
     phase:'Consolante', bracket:'Consolante', round:'Finale', match_order: 107,
-    court: ((9+i-1) % 6) + 1, scheduled_time: null, team_a:'À définir', team_b:'À définir',
-    status:'pending'
-  });
+    team_a:'À définir', team_b:'À définir'
+  }));
 
   return rows;
 }
