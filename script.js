@@ -1,3 +1,4 @@
+// v17.3o - force resume section for running matches
 // v17.3n - safety helpers loaded first
 function getMatchStartedAt(m) {
   if (!m) return '';
@@ -84,7 +85,7 @@ function isDoneMatch(m) {
 
 function isLiveMatchStatus(m) {
   const status = normalizeMatchStatus(m);
-  return ['live', 'active', 'in_progress', 'started', 'ongoing', 'running', 'en_cours', 'in progress'].indexOf(status) >= 0;
+  return ['live', 'active', 'in_progress', 'started', 'ongoing', 'running', 'en_cours', 'en cours', 'in progress', 'launched', 'lance', 'lancé', 'saisie'].indexOf(status) >= 0 || status.indexOf('cours') >= 0 || status.indexOf('progress') >= 0;
 }
 
 function activeMatchOnCourt(court, exceptId) {
@@ -93,6 +94,44 @@ function activeMatchOnCourt(court, exceptId) {
   return matches.find(function(x) {
     return Number(x.court) === courtNum && String(x.id) !== String(exceptId || '') && x.team_a && x.team_b && isLiveMatchStatus(x);
   }) || null;
+}
+
+function hasScoreStarted(m) {
+  return Number(m && m.score_a || 0) !== 0 || Number(m && m.score_b || 0) !== 0;
+}
+
+function isStartedForResume(m) {
+  if (!m || !m.team_a || !m.team_b || isDoneMatch(m)) return false;
+  return isLiveMatchStatus(m) || !!getMatchStartedAt(m) || hasScoreStarted(m) || hasLocalMatchSession(m.id) || String(activeScoreMatchId || '') === String(m.id);
+}
+
+function resumeMatchesForDisplay() {
+  return matches
+    .filter(isStartedForResume)
+    .sort(function(a,b) {
+      return Number(a.court || 0) - Number(b.court || 0) ||
+        (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+        (a.match_order || 0) - (b.match_order || 0) ||
+        (a.id || 0) - (b.id || 0);
+    });
+}
+
+function renderResumeMatchesCard(list) {
+  if (!list || !list.length) return '';
+  return `<div class="card live-matches-card force-resume-card">
+    <div class="section-title-row"><b>Matchs en cours — reprendre</b><span>${list.length}</span></div>
+    <div class="resume-match-list">
+      ${list.map(function(m) {
+        const score = `${Number(m.score_a || 0)} - ${Number(m.score_b || 0)}`;
+        return `<button class="small-btn resume-live-btn resume-match-btn" onclick="openLiveMatch(${m.id})">
+          <span class="resume-court">Terrain ${m.court || '-'}</span>
+          <span class="resume-teams">${m.team_a} vs ${m.team_b}</span>
+          <span class="resume-score">${score}</span>
+          <span class="resume-action">Reprendre</span>
+        </button>`;
+      }).join('')}
+    </div>
+  </div>`;
 }
 
 window.onerror = function(message, source, lineno, colno) {
@@ -719,14 +758,13 @@ function renderScoreSection() {
   if (!div || !listDiv) return;
 
   const active = activeScoreMatchId ? matches.find(m => m.id === activeScoreMatchId && m.status !== 'done') : null;
+  const resumeList = resumeMatchesForDisplay();
   if (active) {
-    div.innerHTML = renderMatchScoreboard(active);
+    const others = resumeList.filter(function(x) { return String(x.id) !== String(active.id); });
+    div.innerHTML = renderMatchScoreboard(active) + renderResumeMatchesCard(others);
   } else {
-    const live = matches
-      .filter(function(m) { return isLiveMatchStatus(m) && !isDoneMatch(m) && m.team_a && m.team_b; })
-      .sort(function(a,b) { return Number(a.court || 0) - Number(b.court || 0) || (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''); });
-    div.innerHTML = live.length
-      ? `<div class="card live-matches-card"><b>Matchs en cours</b><br>${live.map(function(m) { return `<button class="small-btn resume-live-btn" onclick="openLiveMatch(${m.id})">Reprendre la saisie · Terrain ${m.court || '-'} · ${m.team_a} vs ${m.team_b}</button>`; }).join('')}</div>`
+    div.innerHTML = resumeList.length
+      ? renderResumeMatchesCard(resumeList)
       : '<div class="card">Sélectionne un match à lancer ci-dessous.</div>';
   }
 
@@ -774,10 +812,9 @@ async function launchMatch(id) {
     alert('Ce match est déjà terminé. Utilise l’admin si tu dois le corriger.');
     return;
   }
-  if (isLiveMatchStatus(m)) {
-    alert('Ce match est déjà lancé. Ouvre-le dans la liste des matchs lancés.');
-    activeScoreMatchId = id;
-    renderScoreSection();
+  if (isStartedForResume(m)) {
+    alert('Ce match est déjà lancé. Clique sur Reprendre et confirme le code arbitre.');
+    openLiveMatch(id);
     return;
   }
   const otherLive = activeMatchOnCourt(m.court, m.id);
@@ -2383,7 +2420,7 @@ function restoreActiveScoreMatch() {
     const id = localStorage.getItem(activeMatchStorageKey());
     if (!id) return;
     const m = matches.find(function(x) { return String(x.id) === String(id); });
-    if (m && !isDoneMatch(m) && isLiveMatchStatus(m) && hasLocalMatchSession(m.id)) {
+    if (m && isStartedForResume(m) && hasLocalMatchSession(m.id)) {
       activeScoreMatchId = m.id;
     }
   } catch(e) {}

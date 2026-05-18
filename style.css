@@ -2290,3 +2290,68 @@ body {
   .chrono-value { font-size: 1.18rem; }
   .match-chrono-ended .chrono-value { font-size: .9rem; }
 }
+
+/* v17.3o - reprise forcée des matchs en cours */
+.force-resume-card {
+  border: 2px solid rgba(13, 92, 167, 0.18);
+  box-shadow: 0 14px 32px rgba(2, 28, 58, 0.10);
+}
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.section-title-row span {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffd447;
+  color: #09233f;
+  font-weight: 900;
+}
+.resume-match-list {
+  display: grid;
+  gap: 10px;
+}
+.resume-match-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+.resume-court {
+  font-weight: 900;
+  color: #0d5ca7;
+}
+.resume-teams {
+  font-weight: 800;
+}
+.resume-score {
+  font-size: 1.15rem;
+  font-weight: 950;
+  color: #09233f;
+}
+.resume-action {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #0d5ca7;
+  color: white;
+  font-weight: 900;
+}
+@media (max-width: 720px) {
+  .resume-match-btn {
+    grid-template-columns: 1fr auto;
+  }
+  .resume-court, .resume-teams {
+    grid-column: 1 / -1;
+  }
+}
