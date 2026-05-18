@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tournoi CSM Volleyball 91</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="shortcut icon" href="favicon.svg">
-  <link rel="apple-touch-icon" href="favicon.svg">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="theme-color" content="#0b3b82">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css">
@@ -33,7 +33,7 @@
     <button onclick="show('brackets')">Tableaux</button>
     <button onclick="show('publicView')">Écran public</button>
     <button onclick="show('history')">Historique</button>
-    <button onclick="show('admin')">Admin</button>
+    <button onclick="requestAdminAccess()">Admin</button>
   </div>
 
   <div id="startupLoading" class="app-loading">Chargement du tournoi...</div>
@@ -78,9 +78,6 @@
 
   <div id="score" class="section hidden score-screen">
     <h2>Saisie match</h2>
-    <div class="score-access">
-      <input id="matchCode" placeholder="Code équipe arbitre" inputmode="numeric" maxlength="4" />
-    </div>
     <div id="courtView"></div>
     <h3>Matchs à jouer</h3>
     <p class="small">Choisis un match dans la liste. Dès qu’il est lancé, il disparaît des matchs à jouer.</p>
@@ -96,8 +93,7 @@
 
   <div id="admin" class="section hidden">
     <h2>Admin</h2>
-    <input id="adminCode" placeholder="Code admin" type="password" />
-    <button onclick="unlockAdmin()">Déverrouiller admin</button>
+    <div id="adminMsg" class="card"></div>
 
     <div id="adminPanel" class="hidden">
       <h3>Configuration tournoi</h3>
@@ -133,7 +129,6 @@
       <div id="codesAdmin"></div>
     </div>
 
-    <div id="adminMsg" class="card"></div>
   </div>
 
   <script>
