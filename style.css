@@ -1457,3 +1457,35 @@ body {
   .admin-form-grid { grid-template-columns: 1fr; }
   .admin-hero-card { align-items: flex-start; flex-direction: column; }
 }
+
+/* v17.2a.2 - Forfait admin */
+.admin-list-panel select {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(11, 59, 130, .14);
+  background: #fff;
+  padding: 11px 12px;
+  font-weight: 850;
+  box-sizing: border-box;
+}
+.forfeit-admin-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr .7fr .7fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.forfeit-admin-grid label {
+  margin: 0;
+  font-weight: 900;
+  color: #4b5b73;
+}
+.forfeit-admin-grid label span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+@media (max-width: 760px) {
+  .forfeit-admin-grid { grid-template-columns: 1fr; }
+}

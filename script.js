@@ -861,7 +861,115 @@ function renderAdmin() {
       `<button onclick="saveRefCodes()">Sauvegarder codes arbitres</button>` +
       `<button onclick="rebalanceRefereesForBrassages()">Rééquilibrer arbitres brassages</button>`;
   }
+  renderAdminForfeit();
   renderAdminScoreCorrections();
+}
+
+
+function renderAdminForfeit() {
+  const div = document.getElementById('forfeitAdmin');
+  if (!div || !adminUnlocked) return;
+
+  const eligible = matches
+    .filter(m => m.team_a && m.team_b && m.team_a !== 'À définir' && m.team_b !== 'À définir')
+    .sort((a,b) =>
+      String(a.phase || '').localeCompare(String(b.phase || '')) ||
+      Number(a.court || 999) - Number(b.court || 999) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  if (!eligible.length) {
+    div.innerHTML = '<div class="card">Aucun match disponible pour forfait.</div>';
+    return;
+  }
+
+  div.innerHTML = `
+    <div class="forfeit-admin-grid">
+      <label><span>Match</span>
+        <select id="forfeitMatch" onchange="updateForfeitWinnerOptions()">
+          ${eligible.map(m => `<option value="${m.id}">${m.phase || '-'} · T${m.court || '-'} · ${m.team_a} vs ${m.team_b} ${m.status === 'done' ? '(terminé)' : ''}</option>`).join('')}
+        </select>
+      </label>
+      <label><span>Vainqueur</span>
+        <select id="forfeitWinner"></select>
+      </label>
+      <label><span>Score vainqueur</span>
+        <input id="forfeitWinnerScore" type="number" min="0" value="15" />
+      </label>
+      <label><span>Score perdant</span>
+        <input id="forfeitLoserScore" type="number" min="0" value="0" />
+      </label>
+      <button class="danger" onclick="adminApplyForfeit()">Appliquer forfait</button>
+    </div>
+  `;
+  updateForfeitWinnerOptions();
+}
+
+function updateForfeitWinnerOptions() {
+  const matchSelect = document.getElementById('forfeitMatch');
+  const winnerSelect = document.getElementById('forfeitWinner');
+  if (!matchSelect || !winnerSelect) return;
+  const m = matches.find(x => String(x.id) === String(matchSelect.value));
+  if (!m) return;
+  winnerSelect.innerHTML = `
+    <option value="a">${m.team_a}</option>
+    <option value="b">${m.team_b}</option>
+  `;
+}
+
+async function adminApplyForfeit() {
+  if (!adminUnlocked) return;
+  const matchSelect = document.getElementById('forfeitMatch');
+  const winnerSelect = document.getElementById('forfeitWinner');
+  const winInput = document.getElementById('forfeitWinnerScore');
+  const loseInput = document.getElementById('forfeitLoserScore');
+  if (!matchSelect || !winnerSelect || !winInput || !loseInput) return;
+
+  const m = matches.find(x => String(x.id) === String(matchSelect.value));
+  if (!m) return;
+
+  const winnerSide = winnerSelect.value;
+  const winnerScore = Number(winInput.value || 0);
+  const loserScore = Number(loseInput.value || 0);
+  if (winnerScore === loserScore) {
+    alert('Score forfait invalide : il faut un vainqueur.');
+    return;
+  }
+
+  const scoreA = winnerSide === 'a' ? winnerScore : loserScore;
+  const scoreB = winnerSide === 'b' ? winnerScore : loserScore;
+  const winner = winnerSide === 'a' ? m.team_a : m.team_b;
+  const completedAt = new Date().toISOString();
+
+  if (!confirm(`Appliquer forfait ?\n${m.team_a} ${scoreA} - ${scoreB} ${m.team_b}\nVainqueur : ${winner}`)) return;
+
+  let result = await client.from('matches').update({
+    score_a: scoreA,
+    score_b: scoreB,
+    winner,
+    status: 'done',
+    completed_at: completedAt
+  }).eq('id', m.id);
+
+  if (result.error) {
+    result = await client.from('matches').update({
+      score_a: scoreA,
+      score_b: scoreB,
+      winner,
+      status: 'done'
+    }).eq('id', m.id);
+  }
+
+  if (result.error) {
+    alert('Erreur forfait : ' + result.error.message);
+    return;
+  }
+
+  saveLocalCompletedTime(m.id, completedAt);
+  document.getElementById('adminMsg').innerText = 'Forfait appliqué ✅';
+  await loadData();
 }
 
 function renderAdminScoreCorrections() {
