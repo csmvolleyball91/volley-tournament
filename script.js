@@ -668,7 +668,7 @@ function askRefCodeForMatch(m) {
 }
 
 function lockedMatchHtml(m) {
-  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Entrer le code arbitre à 4 chiffres pour modifier.</span></div>`;
+  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Clique sur Reprendre et confirme le code arbitre pour modifier.</span></div>`;
 }
 
 function isPlayableMatch(m) {
@@ -712,7 +712,7 @@ function renderScoreSection() {
       .filter(m => m.status === 'live' && m.team_a && m.team_b)
       .sort((a,b) => Number(a.court || 0) - Number(b.court || 0) || (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''));
     div.innerHTML = live.length
-      ? `<div class="card"><b>Matchs lancés</b><br>${live.map(m => `<button class="small-btn" onclick="openLiveMatch(${m.id})">T${m.court} · ${m.team_a} vs ${m.team_b}</button>`).join('')}</div>`
+      ? `<div class="card"><b>Matchs lancés</b><br>${live.map(m => `<button class="small-btn" onclick="openLiveMatch(${m.id})">Reprendre · T${m.court} · ${m.team_a} vs ${m.team_b}</button>`).join('')}</div>`
       : '<div class="card">Sélectionne un match à lancer ci-dessous.</div>';
   }
 
@@ -2422,13 +2422,10 @@ async function launchMatch(id) {
     return;
   }
 
+  // v17.3l : si le match est déjà lancé, on autorise une reprise depuis n’importe quel appareil
+  // à condition de confirmer le code arbitre du match.
   if (isLiveMatchStatus(m)) {
-    if (!hasLocalMatchSession(m.id)) {
-      alert('Ce match est déjà en cours de saisie sur un autre appareil. Si c’est une erreur, utilise le reset admin.');
-      return;
-    }
-    activeScoreMatchId = m.id;
-    renderScoreSection();
+    openLiveMatch(id);
     return;
   }
 
@@ -2468,15 +2465,22 @@ async function launchMatch(id) {
 function openLiveMatch(id) {
   const m = matches.find(function(x) { return String(x.id) === String(id); });
   if (!m) return;
-  if (isLiveMatchStatus(m) && !hasLocalMatchSession(m.id)) {
-    alert('Ce match est déjà en cours de saisie sur un autre appareil.');
+  if (isDoneMatch(m)) {
+    alert('Ce match est terminé. Utilise l’admin si tu dois le corriger.');
     return;
   }
+
+  // v17.3l : reprise de main autorisée depuis un autre appareil via le code arbitre.
   if (!canEditMatch(m)) {
     const code = askRefCodeForMatch(m);
     if (!code) return;
+    if (isLiveMatchStatus(m) && !hasLocalMatchSession(m.id)) {
+      const ok = confirm('Reprendre la saisie de ce match sur cet appareil ?\n\nSi un autre arbitre l’a encore ouvert, évitez de saisir à deux en même temps.');
+      if (!ok) return;
+    }
     setLocalMatchSession(m.id, code);
   }
+
   activeScoreMatchId = id;
   renderScoreSection();
 }
