@@ -2086,7 +2086,7 @@ function renderAdminAlwaysVisibleTools() {
     </div>
     <div class="admin-tools-buttons">
       <button class="danger admin-big-action" onclick="adminForfeitPromptFlow()">Forfait avec score choisi</button>
-      <button class="admin-big-action" onclick="adminResetPromptFlow()">Reset match</button>
+      <button class="admin-big-action" onclick="adminResetPromptFlow()">Reset match sécurisé</button>
     </div>
     <p class="small">Ces deux actions sont volontairement affichées ici, en haut de l’admin, pour éviter qu’elles soient cachées dans les panneaux.</p>
   `;
@@ -2186,17 +2186,64 @@ async function adminForfeitPromptFlow() {
 
 async function adminResetPromptFlow() {
   if (!adminUnlocked) return requestAdminAccess();
-  const m = adminChooseMatchPrompt('RESET MATCH ADMIN');
-  if (!m) return;
-  if (!confirm(`Reset match ?\n${m.phase || '-'} · T${m.court || '-'}\n${m.team_a} vs ${m.team_b}\n\nLe score repasse à 0-0 et le match redevient à jouer.`)) return;
-  let result = await client.from('matches').update({ score_a: 0, score_b: 0, winner: null, status: 'pending', started_at: null, completed_at: null }).eq('id', m.id);
-  if (result.error) result = await client.from('matches').update({ score_a: 0, score_b: 0, winner: null, status: 'pending' }).eq('id', m.id);
+
+  const eligible = matches
+    .filter(m => m.team_a && m.team_b && m.team_a !== 'À définir' && m.team_b !== 'À définir')
+    .sort((a,b) => {
+      const weight = x => (String(x.status || '').toLowerCase() === 'done' || String(x.status || '').toLowerCase() === 'finished') ? 0 : 1;
+      return weight(a) - weight(b) ||
+        String(a.phase || '').localeCompare(String(b.phase || '')) ||
+        Number(a.court || 999) - Number(b.court || 999) ||
+        Number(a.match_order || 0) - Number(b.match_order || 0) ||
+        Number(a.id || 0) - Number(b.id || 0);
+    });
+
+  if (!eligible.length) {
+    alert('Aucun match disponible à réinitialiser.');
+    return;
+  }
+
+  const list = eligible.map((m, i) => {
+    const a = m.score_a == null ? 0 : m.score_a;
+    const b = m.score_b == null ? 0 : m.score_b;
+    return `${i + 1}. ${m.phase || '-'} · T${m.court || '-'} · ${m.team_a} ${a}-${b} ${m.team_b} · ${m.status || 'pending'}`;
+  }).join('\n');
+
+  const raw = prompt(`RESET MATCH ADMIN\n\nChoisis le numéro du match à remettre à zéro :\n\n${list}`);
+  if (raw === null) return;
+  const idx = Number(raw) - 1;
+  if (!Number.isInteger(idx) || idx < 0 || idx >= eligible.length) {
+    alert('Numéro invalide.');
+    return;
+  }
+  const m = eligible[idx];
+
+  const confirmText = prompt(`Sécurité reset\n\n${m.phase || '-'} · T${m.court || '-'}\n${m.team_a} ${m.score_a == null ? 0 : m.score_a} - ${m.score_b == null ? 0 : m.score_b} ${m.team_b}\n\nTape RESET pour confirmer.`, '');
+  if (confirmText !== 'RESET') {
+    alert('Reset annulé.');
+    return;
+  }
+
+  const payload = {
+    score_a: 0,
+    score_b: 0,
+    winner: null,
+    status: 'pending',
+    started_at: null,
+    completed_at: null
+  };
+
+  let result = await client.from('matches').update(payload).eq('id', m.id);
+  if (result.error) {
+    result = await client.from('matches').update({ score_a: 0, score_b: 0, winner: null, status: 'pending' }).eq('id', m.id);
+  }
   if (result.error) return alert('Erreur reset match : ' + result.error.message);
+
   clearLocalCompletedTime(m.id);
   if (activeScoreMatchId === m.id) activeScoreMatchId = null;
   delete matchEditCodes[m.id];
   const msg = document.getElementById('adminMsg');
-  if (msg) msg.innerText = 'Match réinitialisé ✅';
+  if (msg) msg.innerText = 'Match réinitialisé ✅ Score 0-0, statut à lancer.';
   await loadData();
 }
 
