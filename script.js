@@ -1,3 +1,20 @@
+
+function minutesFromHHMM(value) {
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function isMatchLate(m) {
+  if (!m || m.status === 'done' || m.status === 'live') return false;
+  const scheduled = (typeof computedScheduledTime === 'function' ? computedScheduledTime(m) : '') || m.scheduled_time || '';
+  const scheduledMin = minutesFromHHMM(scheduled);
+  if (scheduledMin === null) return false;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return nowMin > scheduledMin;
+}
+
 window.onerror = function(message, source, lineno, colno) {
   var box = document.getElementById('appError');
   if (box) {
@@ -565,23 +582,6 @@ function nextPlayableMatches(limit = 6) {
     if (selected.length < limit && !selected.some(x => x.id === m.id)) selected.push(m);
   });
   return selected.slice(0, limit);
-}
-
-
-function minutesFromHHMM(value) {
-  const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
-
-function isMatchLate(m) {
-  if (!m || m.status === 'done' || m.status === 'live') return false;
-  const scheduled = computedScheduledTime(m) || m.scheduled_time || '';
-  const scheduledMin = minutesFromHHMM(scheduled);
-  if (scheduledMin === null) return false;
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  return nowMin > scheduledMin;
 }
 
 function renderScoreSection() {
