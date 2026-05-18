@@ -1873,6 +1873,17 @@ loadData();
 setInterval(function(){ if (currentSection === 'publicView') renderPublicView(); }, 10000);
 
 
+
+function isPublicMatchLive(m) {
+  if (!m || m.status === 'done') return false;
+  const status = String(m.status || '').toLowerCase();
+  if (status === 'live' || status === 'active' || status === 'in_progress' || status === 'started') return true;
+  if (m.started_at && !m.completed_at && !m.finished_at && !m.done_at) return true;
+  const a = m.score_a == null ? 0 : Number(m.score_a);
+  const b = m.score_b == null ? 0 : Number(m.score_b);
+  return (a > 0 || b > 0) && status !== 'pending';
+}
+
 function renderPublicView() {
   const div = document.getElementById('publicViewContent');
   if (!div) return;
@@ -1895,19 +1906,20 @@ function renderPublicView() {
         (a.id || 0) - (b.id || 0);
     });
 
-  const firstCall = playable.find(function(m) { return m.status !== 'active'; });
+  const firstCall = playable.find(function(m) { return !isPublicMatchLive(m); });
   const callout = firstCall
     ? '<div class="public-callout"><span>📢 Appel équipes</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Terrain ' + (firstCall.court || '-') + (firstCall.referee_team ? ' · Arbitre : ' + firstCall.referee_team : '') + '</em></div>'
     : '<div class="public-callout is-calm"><span>✅ Tous les matchs prêts sont lancés</span><b>Surveillez les terrains libres</b><em>Prochaine rotation à confirmer</em></div>';
 
   const cards = courts.map(function(c) {
     const courtMatches = playable.filter(function(m) { return Number(m.court) === Number(c); });
-    const current = courtMatches.find(function(m) { return m.status === 'active'; }) || courtMatches[0];
-    const next = courtMatches.find(function(m) { return current && m.id !== current.id; });
-    const isLive = current && current.status === 'active';
-    const isFree = !isLive;
-    const statusText = isLive ? 'EN COURS' : 'TERRAIN LIBRE';
-    const statusClass = isLive ? 'is-live' : 'is-free';
+    const liveMatch = courtMatches.find(isPublicMatchLive);
+    const current = liveMatch || courtMatches[0];
+    const next = courtMatches.find(function(m) { return current && m.id !== current.id && !isPublicMatchLive(m); });
+    const isLive = !!liveMatch;
+    const isFree = !liveMatch && !current;
+    const statusText = isLive ? 'EN COURS' : (current ? 'À LANCER' : 'TERRAIN LIBRE');
+    const statusClass = isLive ? 'is-live' : (current ? 'is-next' : 'is-free');
 
     let body = '';
     if (current) {
