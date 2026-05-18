@@ -21,6 +21,7 @@ let matches = [];
 let settings = null;
 let currentSection = null;
 let adminUnlocked = false;
+let activeScoreMatchId = null;
 
 async function loadData() {
   const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
@@ -76,13 +77,38 @@ function renderAll() {
   renderAdmin();
   renderBrackets();
   renderPublicView();
-  if (currentSection === 'score') loadCourt(false);
+  renderHistory();
+  if (currentSection === 'score') renderScoreSection();
 }
 
 function renderSubtitle() {
   if (!settings) return;
   document.getElementById('subtitle').innerText =
     `${settings.teams_count} équipes · ${settings.courts_count} terrains · départ ${settings.start_time} · ${settings.match_duration} min + ${settings.break_duration} min`;
+}
+
+
+function slotStepMinutes() {
+  return Number(settings && settings.match_duration ? settings.match_duration : 12) + Number(settings && settings.break_duration ? settings.break_duration : 3);
+}
+
+function phaseStartTime(phase) {
+  if (phase === 'Brassage 2') return getBrassage2StartTime();
+  return settings && settings.start_time ? settings.start_time : '09:30';
+}
+
+function computedScheduledTime(m) {
+  // Pour les phases de brassage, l'affichage planning doit respecter la config actuelle :
+  // durée match + pause entre matchs. Cela évite les anciens horaires restés en base à 12 min.
+  if (!settings || !(m.phase === 'Brassage 1' || m.phase === 'Brassage 2') || !m.court) {
+    return m.scheduled_time || '';
+  }
+  const sameCourt = matches
+    .filter(x => x.phase === m.phase && Number(x.court) === Number(m.court))
+    .sort((a, b) => (a.id || 0) - (b.id || 0));
+  const idx = sameCourt.findIndex(x => x.id === m.id);
+  if (idx < 0) return m.scheduled_time || '';
+  return addMinutes(phaseStartTime(m.phase), idx * slotStepMinutes());
 }
 
 function scoreText(m) {
@@ -163,7 +189,7 @@ function renderTeamMatches() {
   const list = matches.filter(m => m.team_a === name || m.team_b === name);
   div.innerHTML = list.map(m => `
     <div class="card">
-      <b>${m.scheduled_time || ''} — Terrain ${m.court}</b><br>
+      <b>${computedScheduledTime(m)} — Terrain ${m.court}</b><br>
       ${m.phase} · Poule ${m.pool || '-'}<br>
       ${m.team_a} vs ${m.team_b}<br>
       Arbitre : <b>${m.referee_team || '-'}</b><br>
@@ -171,6 +197,39 @@ function renderTeamMatches() {
       ${statusText(m)}
     </div>
   `).join('');
+}
+
+
+function renderHistory() {
+  const div = document.getElementById('historyView');
+  if (!div) return;
+  const done = matches
+    .filter(m => m.status === 'done')
+    .sort((a,b) => (computedScheduledTime(b) || '').localeCompare(computedScheduledTime(a) || '') || Number(b.court || 0) - Number(a.court || 0) || (b.id || 0) - (a.id || 0));
+
+  if (!done.length) {
+    div.innerHTML = '<div class="card">Aucun match terminé pour le moment.</div>';
+    return;
+  }
+
+  div.innerHTML = `<table>
+    <tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Match</th><th>Score</th><th>Gagnant</th><th>Arbitre</th></tr>
+    ${done.map(m => `<tr>
+      <td>${computedScheduledTime(m) || '-'}</td>
+      <td>T${m.court || '-'}</td>
+      <td>${m.phase || '-'}</td>
+      <td>${m.team_a || '-'} vs ${m.team_b || '-'}</td>
+      <td><b>${scoreText(m)}</b></td>
+      <td>${m.winner || '-'}</td>
+      <td>${m.referee_team || (isBracketMatch(m) ? 'Libre / non renseigné' : '-')}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function teamNameFromRefCode(code) {
+  const codeMap = buildTeamRefCodeMap(false);
+  const found = Object.entries(codeMap).find(([team, refCode]) => String(refCode) === String(code || '').trim());
+  return found ? found[0] : null;
 }
 
 function renderPlanning() {
@@ -183,11 +242,11 @@ function renderPlanning() {
   let list = [...matches];
   if (court) list = list.filter(m => String(m.court) === court);
   if (phase) list = list.filter(m => m.phase === phase);
-  list.sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || '') || Number(a.court)-Number(b.court));
+  list.sort((a,b) => computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || Number(a.court)-Number(b.court) || (a.id||0)-(b.id||0));
   div.innerHTML = `<table>
     <tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>
     ${list.map(m => `<tr>
-      <td>${m.scheduled_time || ''}</td>
+      <td>${computedScheduledTime(m)}</td>
       <td>T${m.court}</td>
       <td>${m.phase}</td>
       <td>${m.pool || '-'}</td>
@@ -251,12 +310,6 @@ function renderStandings() {
   div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
 }
 
-function courtFromCode() {
-  const code = document.getElementById('courtCode').value.trim().toUpperCase();
-  const m = code.match(/^T([1-6])$/);
-  return m ? Number(m[1]) : null;
-}
-
 
 function enteredMatchCode() {
   const el = document.getElementById('matchCode');
@@ -285,27 +338,90 @@ function lockedMatchHtml(m) {
   return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Entrer le code arbitre à 4 chiffres pour modifier.</span></div>`;
 }
 
-function loadCourt(showError = true) {
+function isPlayableMatch(m) {
+  return m.team_a && m.team_b && m.status !== 'done' && m.status !== 'live';
+}
+
+function nextPlayableMatches(limit = 6) {
+  return matches
+    .filter(isPlayableMatch)
+    .sort((a,b) =>
+      (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+      Number(a.court || 0) - Number(b.court || 0) ||
+      (a.match_order || 0) - (b.match_order || 0) ||
+      (a.id || 0) - (b.id || 0)
+    )
+    .slice(0, limit);
+}
+
+function renderScoreSection() {
   const div = document.getElementById('courtView');
-  const court = courtFromCode();
-  if (!court) {
-    if (showError) div.innerHTML = '<div class="card">Code incorrect. Utilise T1 à T6.</div>';
-    return;
+  const listDiv = document.getElementById('matchLaunchList');
+  if (!div || !listDiv) return;
+
+  const active = activeScoreMatchId ? matches.find(m => m.id === activeScoreMatchId && m.status !== 'done') : null;
+  if (active) {
+    div.innerHTML = renderMatchScoreboard(active);
+  } else {
+    const live = matches
+      .filter(m => m.status === 'live' && m.team_a && m.team_b)
+      .sort((a,b) => Number(a.court || 0) - Number(b.court || 0) || (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''));
+    div.innerHTML = live.length
+      ? `<div class="card"><b>Matchs lancés</b><br>${live.map(m => `<button class="small-btn" onclick="openLiveMatch(${m.id})">T${m.court} · ${m.team_a} vs ${m.team_b}</button>`).join('')}</div>`
+      : '<div class="card">Sélectionne un match à lancer ci-dessous.</div>';
   }
-  const courtMatches = matches
-    .filter(m => m.court === court && m.status !== 'done' && m.team_a && m.team_b)
-    .sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || '') || (a.match_order || 0) - (b.match_order || 0));
-  const m = courtMatches[0] || matches.filter(m => m.court === court).slice(-1)[0];
-  if (!m) {
-    div.innerHTML = '<div class="card">Aucun match trouvé pour ce terrain.</div>';
+
+  const todo = nextPlayableMatches(6);
+  if (!todo.length) {
+    listDiv.innerHTML = '<div class="card">Aucun match à jouer pour le moment.</div>';
     return;
   }
 
+  listDiv.innerHTML = todo.map(m => `
+    <div class="match-launch-card">
+      <div class="launch-top"><b>Terrain ${m.court || '-'}</b><span>${computedScheduledTime(m) || '-'}</span></div>
+      <div class="launch-phase">${m.phase || '-'}${m.pool ? ' · Poule ' + m.pool : ''}</div>
+      <div class="launch-teams">${m.team_a}<span>vs</span>${m.team_b}</div>
+      <div class="launch-ref">Arbitre : <b>${isBracketMatch(m) ? 'libre' : (m.referee_team || '-')}</b></div>
+      <button onclick="launchMatch(${m.id})">Lancer ce match</button>
+    </div>
+  `).join('');
+}
+
+async function launchMatch(id) {
+  const m = matches.find(x => x.id === id);
+  if (!m) return;
+  if (!canEditMatch(m)) {
+    alert(isBracketMatch(m) ? 'Entre le code arbitre de l’équipe qui arbitre.' : 'Code arbitre incorrect pour ce match.');
+    return;
+  }
+
+  const update = { status: 'live' };
   if (isBracketMatch(m)) {
-    div.innerHTML = `
+    const refTeam = teamNameFromRefCode(enteredMatchCode());
+    if (refTeam) update.referee_team = refTeam;
+  }
+
+  const { error } = await client.from('matches').update(update).eq('id', id);
+  if (error) {
+    alert('Erreur lancement match : ' + error.message);
+    return;
+  }
+  activeScoreMatchId = id;
+  await loadData();
+}
+
+function openLiveMatch(id) {
+  activeScoreMatchId = id;
+  renderScoreSection();
+}
+
+function renderMatchScoreboard(m) {
+  if (isBracketMatch(m)) {
+    return `
       <div class="card">
-        <b>Terrain ${court} — Match #${m.id}</b><br>
-        ${m.scheduled_time || 'Horaire à définir'} · ${m.phase} · ${m.round || ''}<br>Arbitre : <b>libre</b>
+        <b>Terrain ${m.court || '-'} — Match #${m.id}</b><br>
+        ${computedScheduledTime(m) || 'Horaire à définir'} · ${m.phase} · ${m.round || ''}<br>Arbitre : <b>${m.referee_team || 'libre'}</b>
         <h2>${m.team_a || 'À définir'}</h2>
         <div class="score">VS</div>
         <h2>${m.team_b || 'À définir'}</h2>
@@ -315,10 +431,9 @@ function loadCourt(showError = true) {
         ` : lockedMatchHtml(m)}
       </div>
     `;
-    return;
   }
 
-  div.innerHTML = `
+  return `
     <div class="scoreboard-full">
       <div class="score-half team-a">
         <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
@@ -328,7 +443,7 @@ function loadCourt(showError = true) {
       </div>
 
       <div class="center-controls">
-        <div class="mini-meta">T${court} · ${m.phase}</div>
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase}</div>
         ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Terminer</button>` : lockedMatchHtml(m)}
       </div>
 
@@ -340,6 +455,11 @@ function loadCourt(showError = true) {
       </div>
     </div>
   `;
+}
+
+// Compatibilité ancienne URL/bouton : on affiche maintenant la sélection visuelle des matchs.
+function loadCourt(showError = true) {
+  renderScoreSection();
 }
 
 
@@ -647,6 +767,44 @@ async function regenerateBrassage1() {
   await loadData();
 }
 
+
+function randomMatchScore() {
+  const winnerScore = 15;
+  const loserScore = 6 + Math.floor(Math.random() * 8); // 6 à 13
+  if (Math.random() < 0.5) return { score_a: winnerScore, score_b: loserScore };
+  return { score_a: loserScore, score_b: winnerScore };
+}
+
+async function fillRandomMissingResults(phase) {
+  if (!adminUnlocked) return;
+  const label = phase === 'all' ? 'tous les brassages' : phase;
+  if (!confirm(`Remplir aléatoirement les résultats manquants pour ${label} ?\nLes matchs déjà terminés ne seront pas modifiés.`)) return;
+
+  const target = matches.filter(m => {
+    const isTargetPhase = phase === 'all' ? (m.phase === 'Brassage 1' || m.phase === 'Brassage 2') : m.phase === phase;
+    return isTargetPhase && m.team_a && m.team_b && (m.status !== 'done' || m.score_a === null || m.score_b === null);
+  });
+
+  if (!target.length) {
+    document.getElementById('adminMsg').innerText = `Aucun résultat manquant pour ${label}.`;
+    return;
+  }
+
+  for (const m of target) {
+    const score = randomMatchScore();
+    const winner = score.score_a > score.score_b ? m.team_a : m.team_b;
+    await client.from('matches').update({
+      score_a: score.score_a,
+      score_b: score.score_b,
+      winner,
+      status: 'done'
+    }).eq('id', m.id);
+  }
+
+  document.getElementById('adminMsg').innerText = `${target.length} résultat(s) rempli(s) aléatoirement pour ${label} ✅`;
+  await loadData();
+}
+
 async function resetScores() {
   if (!adminUnlocked) return;
   if (!confirm('Reset tous les scores ?')) return;
@@ -815,7 +973,7 @@ function renderBrackets() {
   bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
     <div class="bracket-title">${title}</div>
     ${list.map(m => `<div class="card">
-      <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${m.scheduled_time || 'Horaire à définir'}</span><br>
+      <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${computedScheduledTime(m) || 'Horaire à définir'}</span><br>
       <b>${m.team_a || 'À définir'}</b> vs <b>${m.team_b || 'À définir'}</b><br>
       Gagnant : ${m.winner || '-'} · ${statusText(m)}
     </div>`).join('')}
@@ -918,7 +1076,13 @@ async function winnerButton(id, side) {
   const winner = side === 'a' ? m.team_a : m.team_b;
   const loser = side === 'a' ? m.team_b : m.team_a;
 
-  await client.from('matches').update({ winner, status:'done' }).eq('id', id);
+  const payloadDone = { winner, status:'done' };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(enteredMatchCode());
+    if (refTeam) payloadDone.referee_team = refTeam;
+  }
+
+  await client.from('matches').update(payloadDone).eq('id', id);
 
   if (m.next_match_order) {
     const next = matches.find(x => x.match_order === m.next_match_order && x.bracket === m.bracket);
@@ -1046,7 +1210,7 @@ function renderPublicView() {
   const activeMatches = matches
     .filter(function(m) { return m.team_a && m.team_b && m.status !== 'done'; })
     .sort(function(a, b) {
-      return Number(a.court) - Number(b.court) || String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || ''));
+      return Number(a.court) - Number(b.court) || computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || (a.id || 0) - (b.id || 0);
     });
 
   const courts = [];
