@@ -365,17 +365,22 @@ function generateUniqueCode(usedCodes) {
   return code;
 }
 
+function isValidRefCode(code) {
+  return /^\d{4}$/.test(String(code || ''));
+}
+
 function buildTeamRefCodeMap(sourceMatches = matches) {
   const usedCodes = new Set();
   const map = {};
 
-  // On conserve le premier code déjà trouvé pour une équipe arbitre.
-  // Ensuite, tous les matchs arbitrés par cette équipe reprennent ce même code.
+  // On conserve uniquement les anciens codes déjà valides à 4 chiffres.
+  // Les anciens codes à 6 chiffres sont ignorés et remplacés par des codes 4 chiffres.
   sourceMatches.forEach(m => {
-    if (!m.referee_team || !m.access_code) return;
+    const code = String(m.access_code || '').trim();
+    if (!m.referee_team || !isValidRefCode(code)) return;
     if (!map[m.referee_team]) {
-      map[m.referee_team] = m.access_code;
-      usedCodes.add(m.access_code);
+      map[m.referee_team] = code;
+      usedCodes.add(code);
     }
   });
 
@@ -762,24 +767,32 @@ async function assignRefsAndCodes() {
     a.id - b.id
   );
 
-  let n = 1;
-
-  // Génère / conserve un seul code par équipe, puis le recopie sur chaque match arbitré.
+  // Génère / conserve un seul code valide à 4 chiffres par équipe, puis le recopie
+  // sur chaque match arbitré par cette équipe.
   const teamCodeMap = buildTeamRefCodeMap(matches);
+  const refCounts = {};
+  teams.forEach(t => refCounts[t.name] = 0);
 
   for (const m of sorted) {
     let referee = m.referee_team;
     if ((m.phase || '').includes('Brassage') && m.pool) {
       const poolTeams = teamsFromMatchPool(m.phase, m.pool);
       const available = poolTeams.filter(t => t !== m.team_a && t !== m.team_b);
-      referee = available.length ? available[(n-1) % available.length] : referee;
+      if (available.length) {
+        // Répartition équilibrée : on prend l'équipe disponible qui a le moins arbitré.
+        // En cas d'égalité, on garde un choix stable par ordre de nom.
+        referee = [...available].sort((a,b) =>
+          (refCounts[a] || 0) - (refCounts[b] || 0) || String(a).localeCompare(String(b))
+        )[0];
+      }
     }
+
+    if (referee) refCounts[referee] = (refCounts[referee] || 0) + 1;
 
     await client.from('matches').update({
       referee_team: referee,
       access_code: referee ? teamCodeMap[referee] : null
     }).eq('id', m.id);
-    n++;
   }
 
   document.getElementById('adminMsg').innerText = 'Arbitres attribués + codes équipe appliqués ✅';
