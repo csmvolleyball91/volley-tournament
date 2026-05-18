@@ -784,3 +784,18 @@ th {
     font-size: 29px;
   }
 }
+
+.app-error {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 9999;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #ffebe9;
+  color: #7a0000;
+  border: 1px solid rgba(122,0,0,.2);
+  font-weight: 700;
+  box-shadow: 0 10px 25px rgba(0,0,0,.18);
+}
