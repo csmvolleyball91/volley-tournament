@@ -1879,51 +1879,73 @@ function renderPublicView() {
 
   const now = new Date();
   const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const phase = currentPhaseName ? currentPhaseName() : (settings && settings.current_phase ? settings.current_phase : 'Tournoi');
+  const phaseEta = typeof estimatePhaseEndTime === 'function' ? estimatePhaseEndTime() : '';
+  const phaseEtaLabel = phaseEta ? ('Fin phase estimée : ' + phaseEta) : 'Fin phase estimée : à confirmer';
 
-  const activeMatches = matches
-    .filter(function(m) { return m.team_a && m.team_b && m.status !== 'done'; })
-    .sort(function(a, b) {
-      return Number(a.court) - Number(b.court) || computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || (a.id || 0) - (b.id || 0);
-    });
-
+  const maxCourts = settings && settings.courts_count ? Number(settings.courts_count) : 6;
   const courts = [];
-  const maxCourts = settings && settings.courts_count ? Number(settings.courts_count) : 0;
-  if (maxCourts > 0) {
-    for (let i = 1; i <= maxCourts; i++) courts.push(i);
-  } else {
-    activeMatches.forEach(function(m) {
-      if (courts.indexOf(Number(m.court)) === -1) courts.push(Number(m.court));
+  for (let i = 1; i <= maxCourts; i++) courts.push(i);
+
+  const playable = matches
+    .filter(function(m) { return m.team_a && m.team_b && String(m.team_a).indexOf('À définir') === -1 && String(m.team_b).indexOf('À définir') === -1 && m.status !== 'done'; })
+    .sort(function(a, b) {
+      return Number(a.court || 999) - Number(b.court || 999) ||
+        (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+        (a.id || 0) - (b.id || 0);
     });
-  }
 
-  if (!courts.length) {
-    div.innerHTML = '<div class="public-tv"><div class="public-tv-header"><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div class="public-clock">' + clock + '</div></div><div class="public-empty">Aucun match à afficher pour le moment</div></div>';
-    return;
-  }
+  const firstCall = playable.find(function(m) { return m.status !== 'active'; });
+  const callout = firstCall
+    ? '<div class="public-callout"><span>📢 Appel équipes</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Terrain ' + (firstCall.court || '-') + (firstCall.referee_team ? ' · Arbitre : ' + firstCall.referee_team : '') + '</em></div>'
+    : '<div class="public-callout is-calm"><span>✅ Tous les matchs prêts sont lancés</span><b>Surveillez les terrains libres</b><em>Prochaine rotation à confirmer</em></div>';
 
-  div.innerHTML = '<div class="public-tv">' +
-    '<div class="public-tv-header"><div><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div style="opacity:.86;font-weight:800">Matchs en cours et à suivre</div></div><div class="public-clock">' + clock + '</div></div>' +
-    '<div class="public-courts">' + courts.map(function(c) {
-      const courtMatches = activeMatches.filter(function(m) { return Number(m.court) === Number(c); });
-      const current = courtMatches[0];
-      const next = courtMatches[1];
-      const scoreA = current && current.score_a != null ? current.score_a : 0;
-      const scoreB = current && current.score_b != null ? current.score_b : 0;
-      const currentHtml = current ?
-        '<div class="public-current-match">' + current.team_a + '<br><span style="opacity:.55">vs</span><br>' + current.team_b + '</div>' +
-        '<div class="public-scoreline"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>' +
-        '<div class="public-ref">Arbitre : ' + (current.referee_team || 'libre') + '</div>' :
-        '<div class="public-empty">Terrain libre</div>';
-      const nextHtml = next ?
-        '<div class="public-next"><div class="public-match-label">À suivre</div>' + next.team_a + ' vs ' + next.team_b + '<br><span class="public-ref">Arbitre : ' + (next.referee_team || 'libre') + '</span></div>' :
-        '<div class="public-next"><div class="public-match-label">À suivre</div>—</div>';
-      return '<div class="public-court-card">' +
-        '<div class="public-court-top"><div class="public-court-title">Terrain ' + c + '</div><div class="status-pill">EN COURS</div></div>' +
-        '<div class="public-match-label">Match actuel</div>' + currentHtml + nextHtml +
+  const cards = courts.map(function(c) {
+    const courtMatches = playable.filter(function(m) { return Number(m.court) === Number(c); });
+    const current = courtMatches.find(function(m) { return m.status === 'active'; }) || courtMatches[0];
+    const next = courtMatches.find(function(m) { return current && m.id !== current.id; });
+    const isLive = current && current.status === 'active';
+    const isFree = !isLive;
+    const statusText = isLive ? 'EN COURS' : 'TERRAIN LIBRE';
+    const statusClass = isLive ? 'is-live' : 'is-free';
+
+    let body = '';
+    if (current) {
+      const hasScore = current.score_a != null || current.score_b != null;
+      const scoreA = current.score_a == null ? 0 : current.score_a;
+      const scoreB = current.score_b == null ? 0 : current.score_b;
+      body += '<div class="public-main-match">' +
+        '<div class="public-team public-team-a">' + current.team_a + '</div>' +
+        '<div class="public-vs">vs</div>' +
+        '<div class="public-team public-team-b">' + current.team_b + '</div>' +
       '</div>';
-    }).join('') + '</div></div>';
-}
+      body += hasScore || isLive
+        ? '<div class="public-scoreline premium"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>'
+        : '<div class="public-waiting">Match à lancer</div>';
+      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team || 'libre') + '</div>';
+    } else {
+      body += '<div class="public-free-panel"><b>Terrain disponible</b><span>Aucun match en attente</span></div>';
+    }
 
+    const nextHtml = next
+      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + next.team_a + ' vs ' + next.team_b + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + next.referee_team : '') + '</em></div>'
+      : '<div class="public-next premium-next is-empty"><span>À suivre</span><b>—</b><em>Aucun match programmé</em></div>';
+
+    return '<div class="public-court-card premium-tv-card ' + statusClass + '">' +
+      '<div class="public-court-top premium-court-top"><div><div class="public-court-title">Terrain ' + c + '</div><div class="public-court-subtitle">' + (current && computedScheduledTime(current) ? computedScheduledTime(current) : 'Rotation suivante') + '</div></div><div class="status-pill ' + statusClass + '">' + statusText + '</div></div>' +
+      body + nextHtml +
+    '</div>';
+  }).join('');
+
+  div.innerHTML = '<div class="public-tv premium-tv-screen">' +
+    '<div class="public-tv-header premium-tv-header">' +
+      '<div class="public-brand-block"><img src="club-logo.png" alt="CSM" class="public-logo"><div><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div class="public-tv-subtitle">' + phase + ' · ' + phaseEtaLabel + '</div></div></div>' +
+      '<div class="public-clock premium-clock">' + clock + '</div>' +
+    '</div>' +
+    callout +
+    '<div class="public-courts premium-public-courts">' + cards + '</div>' +
+  '</div>';
+}
 
 // v17.2a.6 - Outils admin visibles et indépendants du layout
 function renderAdminAlwaysVisibleTools() {
