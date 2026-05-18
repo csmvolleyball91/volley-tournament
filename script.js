@@ -48,12 +48,17 @@ function ensureVisibleSection() {
     currentSection = 'teams';
     const first = document.getElementById('teams');
     if (first) first.classList.remove('hidden');
+    const dash = document.getElementById('homeDashboard');
+    if (dash) dash.classList.remove('hidden');
   }
 }
 
 function show(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
+  const target = document.getElementById(id);
+  if (target) target.classList.remove('hidden');
+  const dash = document.getElementById('homeDashboard');
+  if (dash && id === 'teams') dash.classList.remove('hidden');
   currentSection = id;
   renderAll();
   ensureVisibleSection();
@@ -66,10 +71,13 @@ function ensureVisibleSection() {
     currentSection = 'teams';
     const first = document.getElementById('teams');
     if (first) first.classList.remove('hidden');
+    const dash = document.getElementById('homeDashboard');
+    if (dash) dash.classList.remove('hidden');
   }
 }
 
 function renderAll() {
+  renderDashboard();
   renderSubtitle();
   renderTeamSelect();
   renderTeamMatches();
@@ -80,6 +88,99 @@ function renderAll() {
   renderPublicView();
   renderHistory();
   if (currentSection === 'score') renderScoreSection();
+}
+
+
+function phaseMatches(phase) {
+  return matches.filter(function(m) { return m.phase === phase && m.team_a && m.team_b; });
+}
+
+function currentPhaseName() {
+  const live = matches.find(function(m) { return m.status === 'live' && m.team_a && m.team_b; });
+  if (live) return live.phase || 'Phase en cours';
+  const next = matches
+    .filter(function(m) { return m.status !== 'done' && m.team_a && m.team_b; })
+    .sort(function(a,b) { return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') || Number(a.court || 0) - Number(b.court || 0); })[0];
+  return next ? (next.phase || 'Phase en cours') : 'Tournoi terminé';
+}
+
+function estimatedPhaseEnd(phase) {
+  if (!phase || phase === 'Tournoi terminé') return '-';
+  const list = phaseMatches(phase);
+  if (!list.length) return '-';
+  const last = list.slice().sort(function(a,b) {
+    return (computedScheduledTime(b) || '').localeCompare(computedScheduledTime(a) || '') || Number(b.id || 0) - Number(a.id || 0);
+  })[0];
+  const start = computedScheduledTime(last) || (settings && settings.start_time) || '09:30';
+  return addMinutes(start, Number(settings && settings.match_duration ? settings.match_duration : 12));
+}
+
+function phaseDelayMinutes(phase) {
+  const live = matches.filter(function(m) { return m.phase === phase && m.status === 'live' && m.team_a && m.team_b; });
+  if (!live.length) return 0;
+  let maxDelay = 0;
+  live.forEach(function(m) {
+    const theoretical = computedScheduledTime(m);
+    const real = timeFromIsoOrTime(getMatchStartedValue(m));
+    if (!theoretical || !real) return;
+    const th = theoretical.split(':').map(Number);
+    const rr = real.split(':').map(Number);
+    const delay = (rr[0]*60 + rr[1]) - (th[0]*60 + th[1]);
+    if (delay > maxDelay) maxDelay = delay;
+  });
+  return maxDelay;
+}
+
+function renderTimeline(phase) {
+  const phases = ['Brassage 1', 'Brassage 2', 'Tableaux'];
+  return phases.map(function(p) {
+    let active = false;
+    if (p === 'Tableaux') active = phase !== 'Brassage 1' && phase !== 'Brassage 2' && phase !== 'Tournoi terminé';
+    else active = phase === p;
+    return '<span class="timeline-step ' + (active ? 'active' : '') + '">' + p + '</span>';
+  }).join('');
+}
+
+function renderDashboard() {
+  if (!settings || !matches) return;
+  const phase = currentPhaseName();
+  const title = document.getElementById('dashPhaseTitle');
+  const meta = document.getElementById('dashPhaseMeta');
+  const timeline = document.getElementById('dashTimeline');
+  const courts = document.getElementById('dashCourts');
+  const callout = document.getElementById('dashCallout');
+  if (!title || !meta || !timeline || !courts || !callout) return;
+
+  const delay = phaseDelayMinutes(phase);
+  title.textContent = phase;
+  meta.innerHTML = '<span>Fin estimée phase : <b>' + estimatedPhaseEnd(phase) + '</b></span>' +
+    '<span>Retard : <b>' + (delay > 0 ? '+' + delay + ' min' : '0 min') + '</b></span>';
+  timeline.innerHTML = renderTimeline(phase);
+
+  const maxCourts = Number(settings.courts_count || 6);
+  const active = matches.filter(function(m) { return m.status === 'live' && m.team_a && m.team_b; });
+  const pending = matches.filter(function(m) { return m.status !== 'done' && m.status !== 'live' && m.team_a && m.team_b; });
+  let html = '';
+  for (let c = 1; c <= maxCourts; c++) {
+    const live = active.find(function(m) { return Number(m.court) === c; });
+    const next = pending.filter(function(m) { return Number(m.court) === c; })
+      .sort(function(a,b) { return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') || Number(a.id || 0) - Number(b.id || 0); })[0];
+    html += '<div class="court-status-card ' + (live ? 'is-live' : 'is-free') + '">' +
+      '<div class="court-status-title">Terrain ' + c + '</div>' +
+      '<div class="court-status-badge">' + (live ? 'EN COURS' : 'LIBRE') + '</div>' +
+      '<div class="court-status-match">' + (live ? live.team_a + ' vs ' + live.team_b : (next ? 'À suivre : ' + next.team_a + ' vs ' + next.team_b : 'Aucun match')) + '</div>' +
+      '</div>';
+  }
+  courts.innerHTML = html;
+
+  const nextCall = pending.slice().sort(function(a,b) { return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') || Number(a.court || 0) - Number(b.court || 0); })[0];
+  if (nextCall) {
+    callout.classList.remove('hidden');
+    callout.innerHTML = '📢 <b>À appeler :</b> ' + nextCall.team_a + ' vs ' + nextCall.team_b + ' — Terrain ' + (nextCall.court || '?') + (nextCall.referee_team ? ' · Arbitre : ' + nextCall.referee_team : '');
+  } else {
+    callout.classList.add('hidden');
+    callout.innerHTML = '';
+  }
 }
 
 function renderSubtitle() {

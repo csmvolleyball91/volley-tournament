@@ -37,6 +37,23 @@
     <button onclick="requestAdminAccess()">Admin</button>
   </div>
 
+
+  <section id="homeDashboard" class="section dashboard-section">
+    <div class="dashboard-grid">
+      <div class="dash-card dash-main">
+        <p class="eyebrow dark">Tournoi live</p>
+        <h2 id="dashPhaseTitle">Chargement...</h2>
+        <div id="dashPhaseMeta" class="dash-meta"></div>
+      </div>
+      <div class="dash-card">
+        <p class="eyebrow dark">Timeline</p>
+        <div id="dashTimeline" class="timeline"></div>
+      </div>
+    </div>
+    <div id="dashCourts" class="court-status-grid"></div>
+    <div id="dashCallout" class="callout-banner hidden"></div>
+  </section>
+
   <div id="startupLoading" class="app-loading">Chargement du tournoi...</div>
 
   <div id="teams" class="section hidden">
