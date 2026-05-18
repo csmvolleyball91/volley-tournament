@@ -592,21 +592,29 @@ function renderScoreSection() {
 
   listDiv.innerHTML = todo.map(m => {
     const ref = isBracketMatch(m) ? 'Arbitrage libre' : (m.referee_team || '-');
-    const statusLabel = m.status === 'live' ? 'EN COURS' : 'À LANCER';
+    const isLate = isMatchLate(m);
+    const statusLabel = isLate ? 'RETARD' : 'EN ATTENTE';
+    const statusClass = isLate ? 'status-late' : 'status-next';
     return `
-      <button type="button" class="public-court-card match-select-card" onclick="launchMatch(${m.id})">
-        <div class="public-court-top">
-          <div class="public-court-title">Terrain ${m.court || '-'}</div>
-          <div class="status-pill status-next">${statusLabel}</div>
+      <button type="button" class="public-court-card match-select-card premium-launch-card" onclick="launchMatch(${m.id})" aria-label="Lancer ${m.team_a} contre ${m.team_b} terrain ${m.court || '-'}">
+        <div class="launch-card-header">
+          <div>
+            <div class="launch-court">Terrain ${m.court || '-'}</div>
+            <div class="launch-meta">${m.phase || '-'}${m.pool ? ' · Poule ' + m.pool : ''}</div>
+          </div>
+          <div class="launch-time-box">
+            <span>${computedScheduledTime(m) || '--:--'}</span>
+            <small>départ</small>
+          </div>
         </div>
-        <div class="public-match-label">${m.phase || '-'}${m.pool ? ' · Poule ' + m.pool : ''} · ${computedScheduledTime(m) || '-'}</div>
-        <div class="public-current-match match-select-teams">
+        <div class="launch-card-status ${statusClass}">${statusLabel}</div>
+        <div class="match-select-teams premium-teams">
           <span>${m.team_a}</span>
           <em>vs</em>
           <span>${m.team_b}</span>
         </div>
-        <div class="public-ref">Arbitre : ${ref}</div>
-        <div class="launch-cta">Cliquer pour lancer le match</div>
+        <div class="launch-referee"><b>Arbitre</b><span>${ref}</span></div>
+        <div class="launch-cta">Lancer la saisie</div>
       </button>
     `;
   }).join('');

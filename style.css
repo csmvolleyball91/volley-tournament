@@ -1222,3 +1222,113 @@ body {
   .court-status-grid { grid-template-columns: 1fr; }
   .dashboard-section { margin-top: 10px; }
 }
+
+/* v17.1d - Saisie matchs premium */
+.premium-launch-card {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+}
+.premium-launch-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 7px;
+  background: linear-gradient(90deg, var(--club-blue), var(--club-yellow));
+}
+.launch-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px 20px 8px;
+}
+.launch-court {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--club-blue);
+  font-weight: 950;
+  letter-spacing: -.03em;
+}
+.launch-meta {
+  margin-top: 7px;
+  color: #68768e;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.launch-time-box {
+  min-width: 72px;
+  border-radius: 18px;
+  padding: 10px 10px 8px;
+  text-align: center;
+  background: #eef5ff;
+  border: 1px solid rgba(11,59,130,.12);
+}
+.launch-time-box span {
+  display: block;
+  color: var(--club-blue-dark);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 950;
+}
+.launch-time-box small {
+  display: block;
+  margin-top: 4px;
+  color: #6b7890;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.launch-card-status {
+  width: fit-content;
+  margin: 6px 20px 2px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+.launch-card-status.status-next { background: #fff4bd; color: #7c5200; }
+.launch-card-status.status-late { background: #fee2e2; color: #991b1b; }
+.premium-teams {
+  margin: 12px 18px 12px;
+  padding: 18px 12px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid rgba(11,59,130,.10);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.6);
+}
+.premium-teams span {
+  color: #0a1f44;
+  font-weight: 950;
+}
+.launch-referee {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 20px 16px;
+  padding: 11px 13px;
+  border-radius: 16px;
+  background: rgba(11,59,130,.06);
+  color: #46546b;
+  font-weight: 850;
+}
+.launch-referee span {
+  color: var(--club-blue);
+  font-weight: 950;
+  text-align: right;
+}
+.premium-launch-card .launch-cta {
+  margin: 0;
+  border-radius: 0;
+  padding: 14px 16px;
+}
+@media (max-width: 520px) {
+  .launch-card-header { padding: 20px 16px 8px; }
+  .launch-court { font-size: 24px; }
+  .launch-referee { margin-left: 16px; margin-right: 16px; }
+}
