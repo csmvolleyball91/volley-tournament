@@ -2052,3 +2052,20 @@ body {
   .admin-correction-card { grid-template-columns: 1fr; }
   .admin-correction-edit { grid-template-columns: 1fr; }
 }
+
+/* v17.2a11 - Pause premium */
+.pause-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 193, 7, 0.16);
+  color: #7a4b00;
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  font-weight: 700;
+}
+.admin-big-action.pause {
+  background: linear-gradient(135deg, #facc15, #f59e0b);
+  color: #1f2937;
+}

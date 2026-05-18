@@ -5,6 +5,51 @@ function minutesFromHHMM(value) {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
+
+function formatTime(value) {
+  if (!value) return '';
+  const text = String(value);
+  if (/^\d{1,2}:\d{2}$/.test(text)) return text;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return text;
+  return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function pauseStartStorageKey() {
+  return 'volley_tournament_pause_started_at';
+}
+
+function getTournamentPauseStartMs() {
+  try {
+    const raw = localStorage.getItem(pauseStartStorageKey());
+    const ms = Number(raw || 0);
+    return Number.isFinite(ms) && ms > 0 ? ms : 0;
+  } catch(e) {
+    return 0;
+  }
+}
+
+function setTournamentPauseStartMs(ms) {
+  try {
+    if (ms) localStorage.setItem(pauseStartStorageKey(), String(ms));
+    else localStorage.removeItem(pauseStartStorageKey());
+  } catch(e) {}
+}
+
+function getPauseCountdownLabel() {
+  const minutes = getTournamentPauseMinutes();
+  if (!minutes || minutes <= 0) return '';
+  const started = getTournamentPauseStartMs();
+  if (!started) return '+' + minutes + ' min';
+  const end = started + minutes * 60000;
+  const remaining = Math.max(0, end - Date.now());
+  if (remaining <= 0) return 'terminée';
+  const totalSec = Math.ceil(remaining / 1000);
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+  const ss = String(totalSec % 60).padStart(2, '0');
+  return 'reprise dans ' + mm + ':' + ss;
+}
+
 function isMatchLate(m) {
   if (!m || m.status === 'done' || m.status === 'live') return false;
   const scheduled = (typeof computedScheduledTime === 'function' ? computedScheduledTime(m) : '') || m.scheduled_time || '';
@@ -195,7 +240,7 @@ function renderDashboard() {
   const pauseMinutes = getTournamentPauseMinutes();
   meta.innerHTML = '<span>Fin estimée phase : <b>' + estimatedPhaseEnd(phase) + '</b></span>' +
     '<span>Retard : <b>' + (delay > 0 ? '+' + delay + ' min' : '0 min') + '</b></span>' +
-    (pauseMinutes > 0 ? '<span class="pause-pill">Pause tournoi : <b>+' + pauseMinutes + ' min</b></span>' : '');
+    (pauseMinutes > 0 ? '<span class="pause-pill">Pause tournoi : <b>' + getPauseCountdownLabel() + '</b></span>' : '');
   timeline.innerHTML = renderTimeline(phase);
 
   const maxCourts = Number(settings.courts_count || 6);
@@ -1937,7 +1982,7 @@ function renderPublicView() {
   const now = new Date();
   const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const phase = currentPhaseName ? currentPhaseName() : (settings && settings.current_phase ? settings.current_phase : 'Tournoi');
-  const phaseEta = typeof estimatePhaseEndTime === 'function' ? estimatePhaseEndTime() : '';
+  const phaseEta = estimatedPhaseEnd(phase);
   const phaseEtaLabel = phaseEta ? ('Fin phase estimée : ' + phaseEta) : 'Fin phase estimée : à confirmer';
 
   const maxCourts = settings && settings.courts_count ? Number(settings.courts_count) : 6;
@@ -2069,6 +2114,7 @@ async function adminPausePromptFlow() {
     savedShared = false;
   }
   setLocalTournamentPauseMinutes(minutes);
+  setTournamentPauseStartMs(minutes > 0 ? Date.now() : 0);
   if (settings) settings.pause_minutes = minutes;
 
   const msg = document.getElementById('adminMsg');
@@ -2153,3 +2199,12 @@ async function adminResetPromptFlow() {
   if (msg) msg.innerText = 'Match réinitialisé ✅';
   await loadData();
 }
+
+
+let pauseCountdownIntervalStarted = true;
+setInterval(function() {
+  if (getTournamentPauseMinutes && getTournamentPauseMinutes() > 0) {
+    renderDashboard();
+    if (currentSection === 'publicView') renderPublicView();
+  }
+}, 10000);
