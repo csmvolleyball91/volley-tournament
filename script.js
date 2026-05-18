@@ -41,6 +41,27 @@ let adminUnlocked = false;
 let activeScoreMatchId = null;
 let matchEditCodes = {};
 
+
+function pauseStorageKey() {
+  return 'volley_tournament_pause_minutes';
+}
+
+function getTournamentPauseMinutes() {
+  const fromSettings = settings && settings.pause_minutes != null ? Number(settings.pause_minutes) : NaN;
+  if (!Number.isNaN(fromSettings) && fromSettings > 0) return fromSettings;
+  try {
+    const v = Number(localStorage.getItem(pauseStorageKey()) || 0);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  } catch(e) {
+    return 0;
+  }
+}
+
+function setLocalTournamentPauseMinutes(minutes) {
+  try { localStorage.setItem(pauseStorageKey(), String(Math.max(0, Number(minutes) || 0))); } catch(e) {}
+}
+
+
 async function loadData() {
   const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
   if (se) alert('Erreur settings: ' + se.message);
@@ -130,7 +151,7 @@ function estimatedPhaseEnd(phase) {
     return (computedScheduledTime(b) || '').localeCompare(computedScheduledTime(a) || '') || Number(b.id || 0) - Number(a.id || 0);
   })[0];
   const start = computedScheduledTime(last) || (settings && settings.start_time) || '09:30';
-  return addMinutes(start, Number(settings && settings.match_duration ? settings.match_duration : 12));
+  return addMinutes(start, Number(settings && settings.match_duration ? settings.match_duration : 12) + getTournamentPauseMinutes());
 }
 
 function phaseDelayMinutes(phase) {
@@ -171,8 +192,10 @@ function renderDashboard() {
 
   const delay = phaseDelayMinutes(phase);
   title.textContent = phase;
+  const pauseMinutes = getTournamentPauseMinutes();
   meta.innerHTML = '<span>Fin estimée phase : <b>' + estimatedPhaseEnd(phase) + '</b></span>' +
-    '<span>Retard : <b>' + (delay > 0 ? '+' + delay + ' min' : '0 min') + '</b></span>';
+    '<span>Retard : <b>' + (delay > 0 ? '+' + delay + ' min' : '0 min') + '</b></span>' +
+    (pauseMinutes > 0 ? '<span class="pause-pill">Pause tournoi : <b>+' + pauseMinutes + ' min</b></span>' : '');
   timeline.innerHTML = renderTimeline(phase);
 
   const maxCourts = Number(settings.courts_count || 6);
@@ -1920,6 +1943,38 @@ function renderAdminAlwaysVisibleTools() {
     </div>
     <p class="small">Ces deux actions sont volontairement affichées ici, en haut de l’admin, pour éviter qu’elles soient cachées dans les panneaux.</p>
   `;
+}
+
+
+async function adminPausePromptFlow() {
+  if (!adminUnlocked) return requestAdminAccess();
+  const current = getTournamentPauseMinutes();
+  const raw = prompt('Durée de pause à appliquer à la fin estimée de phase ?\nValeurs conseillées : 5, 10, 15 ou 20 minutes.\nMettre 0 pour annuler la pause.', current ? String(current) : '10');
+  if (raw === null) return;
+  const minutes = Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    alert('Durée invalide. Mets 0, 5, 10, 15 ou 20.');
+    return;
+  }
+
+  // Tentative de sauvegarde partagée via Supabase si la colonne existe.
+  // Si la colonne n'existe pas, fallback local sans bloquer le tournoi.
+  let savedShared = false;
+  try {
+    const result = await client.from('settings').update({ pause_minutes: minutes }).eq('id', 1);
+    savedShared = !result.error;
+  } catch(e) {
+    savedShared = false;
+  }
+  setLocalTournamentPauseMinutes(minutes);
+  if (settings) settings.pause_minutes = minutes;
+
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = minutes > 0
+    ? ('Pause tournoi appliquée : +' + minutes + ' min' + (savedShared ? ' ✅' : ' ✅ (local)'))
+    : ('Pause tournoi annulée' + (savedShared ? ' ✅' : ' ✅ (local)'));
+  renderDashboard();
+  renderSubtitle();
 }
 
 function adminChooseMatchPrompt(label) {

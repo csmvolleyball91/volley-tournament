@@ -1596,3 +1596,14 @@ body {
   background:#b42318;color:white;border-color:#b42318;
 }
 @media(max-width:720px){.admin-prompt-tools{grid-template-columns:1fr}.admin-big-action{min-height:64px;font-size:16px}}
+
+
+.admin-big-action.pause {
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  color: #fff;
+}
+.pause-pill {
+  background: #fff7ed !important;
+  color: #9a3412 !important;
+  border-color: #fed7aa !important;
+}
