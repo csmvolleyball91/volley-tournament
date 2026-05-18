@@ -51,15 +51,55 @@ function scoreText(m) {
   return m.score_a === null || m.score_b === null ? '-' : `${m.score_a} / ${m.score_b}`;
 }
 
+function serviceKey(matchId) {
+  return `volley_service_history_${matchId}`;
+}
+
+function getServiceHistory(matchId) {
+  try {
+    return JSON.parse(localStorage.getItem(serviceKey(matchId)) || '[]').filter(x => x === 'a' || x === 'b');
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveServiceHistory(matchId, history) {
+  localStorage.setItem(serviceKey(matchId), JSON.stringify(history));
+}
+
 function servingSide(m) {
-  // Service automatique sans champ Supabase dédié :
-  // on alterne à chaque point à partir de l'équipe A.
-  const total = (m.score_a ?? 0) + (m.score_b ?? 0);
-  return total % 2 === 0 ? 'a' : 'b';
+  // Service type volley : le service ne change de camp que si l'équipe en réception marque.
+  // Pas besoin de colonne Supabase : on garde l'historique des clics sur le téléphone de l'arbitre.
+  let server = 'a';
+  const history = getServiceHistory(m.id);
+  for (const scorer of history) {
+    if (scorer !== server) server = scorer;
+  }
+  return server;
+}
+
+function serviceBall(m, side) {
+  return servingSide(m) === side ? '<span class="service-ball" title="Au service">🏐</span>' : '';
 }
 
 function servingText(m) {
   return servingSide(m) === 'b' ? m.team_b : m.team_a;
+}
+
+function syncServiceHistoryAfterPoint(m, side, delta, newA, newB) {
+  let history = getServiceHistory(m.id);
+  const targetTotal = (newA ?? 0) + (newB ?? 0);
+  if (delta > 0) {
+    history.push(side);
+  } else if (delta < 0) {
+    // On retire le dernier point connu de cette équipe.
+    const idx = history.lastIndexOf(side);
+    if (idx >= 0) history.splice(idx, 1);
+  }
+  // Sécurité : si historique trop long ou scores remis à zéro, on recale.
+  if (history.length > targetTotal) history = history.slice(0, targetTotal);
+  if (targetTotal === 0) history = [];
+  saveServiceHistory(m.id, history);
 }
 
 function statusText(m) {
@@ -240,7 +280,7 @@ function loadCourt(showError = true) {
   div.innerHTML = `
     <div class="scoreboard-full">
       <div class="score-half team-a">
-        <div class="team-title">${m.team_a}</div>
+        <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
         <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', 1)"` : 'disabled'}>+</button>
         <div class="mega-score">${m.score_a ?? 0}</div>
         <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', -1)"` : 'disabled'}>−</button>
@@ -248,12 +288,11 @@ function loadCourt(showError = true) {
 
       <div class="center-controls">
         <div class="mini-meta">T${court} · ${m.phase}</div>
-        <div class="service-indicator">${servingText(m)} 🏐 service</div>
         ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Terminer</button>` : lockedMatchHtml(m)}
       </div>
 
       <div class="score-half team-b">
-        <div class="team-title">${m.team_b}</div>
+        <div class="team-title">${m.team_b}${serviceBall(m, 'b')}</div>
         <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', 1)"` : 'disabled'}>+</button>
         <div class="mega-score">${m.score_b ?? 0}</div>
         <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', -1)"` : 'disabled'}>−</button>
@@ -275,6 +314,7 @@ async function changePoint(id, side, delta) {
     alert('Erreur mise à jour score : ' + error.message);
     return;
   }
+  syncServiceHistoryAfterPoint(m, side, delta, newA, newB);
   await loadData();
 }
 
