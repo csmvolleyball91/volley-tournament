@@ -7,6 +7,7 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b3b82">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css">
@@ -15,7 +16,7 @@
   <div id="appError" class="app-error" style="display:none"></div>
   <header class="hero club-hero">
     <div class="brand-row">
-      <img class="club-logo" src="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png" alt="Club Sportif Mennecy Volley-Ball" />
+      <img class="club-logo" src="club-logo.png" alt="Club Sportif Mennecy Volley-Ball" />
       <div>
         <p class="eyebrow">Club Sportif Mennecy Volley-Ball</p>
         <h1>Tournoi Live</h1>
@@ -127,6 +128,10 @@
       <h3>Codes arbitres</h3>
       <p class="small">Codes fixes par équipe, visibles seulement en admin. Tu peux les modifier ici.</p>
       <div id="codesAdmin"></div>
+
+      <h3>Correction scores terminés</h3>
+      <p class="small">Admin uniquement : corrige un score déjà validé si erreur de saisie.</p>
+      <div id="scoreCorrectionsAdmin"></div>
     </div>
 
   </div>

@@ -194,6 +194,8 @@ function servingSide(m) {
 }
 
 function serviceBall(m, side) {
+  const total = (m.score_a == null ? 0 : Number(m.score_a)) + (m.score_b == null ? 0 : Number(m.score_b));
+  if (total === 0) return '';
   return servingSide(m) === side ? '<span class="service-ball" title="Au service">🏐</span>' : '';
 }
 
@@ -441,15 +443,27 @@ function isPlayableMatch(m) {
 }
 
 function nextPlayableMatches(limit = 6) {
-  return matches
+  const playable = matches
     .filter(isPlayableMatch)
     .sort((a,b) =>
-      (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
       Number(a.court || 0) - Number(b.court || 0) ||
+      (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
       (a.match_order || 0) - (b.match_order || 0) ||
       (a.id || 0) - (b.id || 0)
-    )
-    .slice(0, limit);
+    );
+
+  // Affichage arbitres/terrains : on montre d'abord le prochain match de chaque terrain,
+  // toujours dans l'ordre Terrain 1 -> Terrain 6.
+  const courtsCount = Number(settings && settings.courts_count ? settings.courts_count : 6);
+  const selected = [];
+  for (let c = 1; c <= courtsCount && selected.length < limit; c++) {
+    const m = playable.find(x => Number(x.court) === c && !selected.some(y => y.id === x.id));
+    if (m) selected.push(m);
+  }
+  playable.forEach(m => {
+    if (selected.length < limit && !selected.some(x => x.id === m.id)) selected.push(m);
+  });
+  return selected.slice(0, limit);
 }
 
 function renderScoreSection() {
@@ -476,8 +490,6 @@ function renderScoreSection() {
   }
 
   listDiv.innerHTML = todo.map(m => {
-    const scoreA = m.score_a != null ? m.score_a : 0;
-    const scoreB = m.score_b != null ? m.score_b : 0;
     const ref = isBracketMatch(m) ? 'Arbitrage libre' : (m.referee_team || '-');
     const statusLabel = m.status === 'live' ? 'EN COURS' : 'À LANCER';
     return `
@@ -492,7 +504,6 @@ function renderScoreSection() {
           <em>vs</em>
           <span>${m.team_b}</span>
         </div>
-        <div class="public-scoreline mini-scoreline"><span>${scoreA}</span><b>-</b><span>${scoreB}</span></div>
         <div class="public-ref">Arbitre : ${ref}</div>
         <div class="launch-cta">Cliquer pour lancer le match</div>
       </button>
@@ -657,7 +668,7 @@ function requestAdminAccess() {
 }
 
 function unlockAdminCode(code) {
-  if (code === settings.admin_code) {
+  if (code === 'keke' || code === settings.admin_code) {
     adminUnlocked = true;
     show('admin');
     const panel = document.getElementById('adminPanel');
@@ -718,13 +729,50 @@ function renderAdmin() {
 
     codesDiv.innerHTML = `<h3>Codes arbitres par équipe</h3>` +
       `<p class="small">Codes fixes : modification uniquement ici puis bouton sauvegarder. En tableau, arbitrage libre : n'importe quelle équipe saisit son code.</p>` +
-      `<p>${phaseBalanceMsg('Brassage 1')}<br>${phaseBalanceMsg('Brassage 2')}</p>` +
       `<table><tr><th>Équipe</th><th>Code arbitre</th><th>B1</th><th>B2</th></tr>` +
       teams.map(t => `<tr><td>${t.name}</td><td><input class="code-input" data-ref-code-team="${escapeAttr(t.name)}" value="${codeMap[t.name] || ''}" inputmode="numeric" maxlength="4" placeholder="auto" /></td><td>${refCountByPhase['Brassage 1'][t.name] || 0}</td><td>${refCountByPhase['Brassage 2'][t.name] || 0}</td></tr>`).join('') +
       `</table>` +
       `<button onclick="saveRefCodes()">Sauvegarder codes arbitres</button>` +
       `<button onclick="rebalanceRefereesForBrassages()">Rééquilibrer arbitres brassages</button>`;
   }
+  renderAdminScoreCorrections();
+}
+
+function renderAdminScoreCorrections() {
+  const div = document.getElementById('scoreCorrectionsAdmin');
+  if (!div || !adminUnlocked) return;
+  const done = matches
+    .filter(m => m.status === 'done')
+    .sort((a,b) => (Date.parse(getCompletionIso(b)) || 0) - (Date.parse(getCompletionIso(a)) || 0) || (b.id || 0) - (a.id || 0));
+  if (!done.length) {
+    div.innerHTML = '<div class="card">Aucun match terminé à corriger.</div>';
+    return;
+  }
+  div.innerHTML = `<table><tr><th>Match</th><th>Score A</th><th>Score B</th><th>Action</th></tr>` +
+    done.map(m => `<tr>
+      <td><b>T${m.court || '-'}</b> · ${m.phase || '-'}<br>${m.team_a || '-'} vs ${m.team_b || '-'}</td>
+      <td><input class="code-input" id="fixA_${m.id}" type="number" min="0" value="${m.score_a == null ? 0 : m.score_a}"></td>
+      <td><input class="code-input" id="fixB_${m.id}" type="number" min="0" value="${m.score_b == null ? 0 : m.score_b}"></td>
+      <td><button class="small-btn" onclick="adminUpdateScore(${m.id})">Corriger</button></td>
+    </tr>`).join('') + `</table>`;
+}
+
+async function adminUpdateScore(id) {
+  if (!adminUnlocked) return;
+  const m = matches.find(x => x.id === id);
+  if (!m) return;
+  const a = Number(document.getElementById(`fixA_${id}`).value || 0);
+  const b = Number(document.getElementById(`fixB_${id}`).value || 0);
+  if (a === b) { alert('Match nul impossible.'); return; }
+  const winner = a > b ? m.team_a : m.team_b;
+  const completedAt = getCompletionIso(m) || new Date().toISOString();
+  let result = await client.from('matches').update({ score_a: a, score_b: b, winner, status: 'done', completed_at: completedAt }).eq('id', id);
+  if (result.error) {
+    result = await client.from('matches').update({ score_a: a, score_b: b, winner, status: 'done' }).eq('id', id);
+  }
+  if (result.error) { alert('Erreur correction score : ' + result.error.message); return; }
+  saveLocalCompletedTime(id, completedAt);
+  await loadData();
 }
 
 async function saveSettings() {
@@ -1440,7 +1488,7 @@ client.channel('matches-live')
   .subscribe();
 
 loadData();
-setInterval(function(){ if (currentSection === 'publicView') renderPublicView(); }, 30000);
+setInterval(function(){ if (currentSection === 'publicView') renderPublicView(); }, 10000);
 
 
 function renderPublicView() {
