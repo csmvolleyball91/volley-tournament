@@ -1030,3 +1030,73 @@ body {
   margin: 8px 0;
   text-align: left;
 }
+
+/* v15.9 — sélection match façon écran public, cliquable */
+.match-launch-grid {
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 18px;
+}
+.match-select-card {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: 2px solid rgba(255,196,0,.75);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  font-family: inherit;
+  min-height: 0;
+}
+.match-select-card:hover,
+.match-select-card:focus {
+  transform: translateY(-2px);
+  border-color: var(--club-yellow);
+  box-shadow: 0 22px 42px rgba(0, 61, 136, .18);
+  outline: none;
+}
+.match-select-card .public-court-title {
+  font-size: 24px;
+}
+.match-select-card .public-match-label {
+  margin-top: 4px;
+}
+.match-select-teams {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  font-size: clamp(20px, 2.4vw, 30px);
+  margin: 14px 0 8px;
+}
+.match-select-teams span {
+  line-height: 1.08;
+}
+.match-select-teams em {
+  font-style: normal;
+  color: var(--club-yellow);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.mini-scoreline {
+  font-size: 34px;
+  margin: 8px 0 10px;
+}
+.mini-scoreline span {
+  min-width: 58px;
+  border-radius: 14px;
+}
+.launch-cta {
+  margin-top: 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--club-blue), var(--club-blue-dark));
+  color: #fff;
+  text-align: center;
+  padding: 11px 14px;
+  font-weight: 950;
+  box-shadow: 0 10px 22px rgba(0, 61, 136, .20);
+}
+@media (max-width: 520px) {
+  .match-launch-grid { grid-template-columns: 1fr; }
+  .match-select-teams { font-size: 22px; }
+}
