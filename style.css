@@ -1489,3 +1489,62 @@ body {
 @media (max-width: 760px) {
   .forfeit-admin-grid { grid-template-columns: 1fr; }
 }
+
+/* v17.2a.4 - Admin match tools made clearly visible */
+.admin-priority-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0 22px;
+}
+.admin-priority-tools .admin-card {
+  border: 2px solid rgba(15, 23, 42, 0.10);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.10);
+}
+.admin-tool-forfeit {
+  background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(254,242,242,0.98));
+}
+.admin-tool-reset {
+  background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.98));
+}
+.admin-action-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.danger-badge { background: #fee2e2; color: #991b1b; }
+.reset-badge { background: #dbeafe; color: #1d4ed8; }
+.forfeit-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.forfeit-admin-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.forfeit-admin-grid select,
+.forfeit-admin-grid input {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(15,23,42,.14);
+  padding: 9px 11px;
+  font-size: 14px;
+  background: #fff;
+}
+.forfeit-admin-grid button {
+  min-height: 42px;
+}
+@media (max-width: 760px) {
+  .admin-priority-tools { grid-template-columns: 1fr; }
+  .forfeit-admin-grid { grid-template-columns: 1fr; }
+}

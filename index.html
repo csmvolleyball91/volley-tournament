@@ -123,6 +123,32 @@
         <span class="admin-lock-badge">Mode admin</span>
       </div>
 
+      <div class="admin-priority-tools">
+        <article class="admin-card admin-card-wide admin-tool-forfeit">
+          <div class="admin-card-head">
+            <div>
+              <p class="eyebrow dark">Action rapide</p>
+              <h3>Forfait avec score choisi</h3>
+            </div>
+            <span class="admin-action-badge danger-badge">Forfait</span>
+          </div>
+          <p class="small">Choisis le match, le vainqueur et le score à appliquer. Le match sera marqué comme terminé.</p>
+          <div id="forfeitAdmin" class="admin-list-panel"></div>
+        </article>
+
+        <article class="admin-card admin-card-wide admin-tool-reset">
+          <div class="admin-card-head">
+            <div>
+              <p class="eyebrow dark">Action rapide</p>
+              <h3>Reset match admin</h3>
+            </div>
+            <span class="admin-action-badge reset-badge">Reset</span>
+          </div>
+          <p class="small">Remet un match à 0-0, le déverrouille et le replace dans les matchs à jouer.</p>
+          <div id="resetMatchAdmin" class="admin-list-panel"></div>
+        </article>
+      </div>
+
       <div class="admin-grid">
         <article class="admin-card admin-card-wide">
           <div class="admin-card-head">
@@ -199,29 +225,6 @@
       <article class="admin-card admin-card-wide">
         <div class="admin-card-head">
           <div>
-            <p class="eyebrow dark">Admin match</p>
-            <h3>Forfait avec score choisi</h3>
-          </div>
-        </div>
-        <p class="small">Choisis le match, le vainqueur et le score à appliquer. Le match sera marqué comme terminé.</p>
-        <div id="forfeitAdmin" class="admin-list-panel"></div>
-      </article>
-
-
-      <article class="admin-card admin-card-wide">
-        <div class="admin-card-head">
-          <div>
-            <p class="eyebrow dark">Admin match</p>
-            <h3>Reset match</h3>
-          </div>
-        </div>
-        <p class="small">Remet un match à 0-0, le déverrouille et le replace dans les matchs à jouer.</p>
-        <div id="resetMatchAdmin" class="admin-list-panel"></div>
-      </article>
-
-      <article class="admin-card admin-card-wide">
-        <div class="admin-card-head">
-          <div>
             <p class="eyebrow dark">Corrections</p>
             <h3>Scores terminés</h3>
           </div>
@@ -237,6 +240,6 @@
     window.SUPABASE_URL = "https://oqabkmiwpefhitwwzrqk.supabase.co";
     window.SUPABASE_KEY = "sb_publishable_OAwnRz5aJVgL_JbVJSctXg__CuQ1kvN";
   </script>
-  <script src="script.js?v=17_2a1"></script>
+  <script src="script.js?v=17_2a4"></script>
 </body>
 </html>
