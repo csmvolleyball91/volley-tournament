@@ -1,4 +1,4 @@
-// v17.3m2 - safety helpers loaded first
+// v17.3n - safety helpers loaded first
 function getMatchStartedAt(m) {
   if (!m) return '';
   try {
@@ -723,10 +723,10 @@ function renderScoreSection() {
     div.innerHTML = renderMatchScoreboard(active);
   } else {
     const live = matches
-      .filter(m => m.status === 'live' && m.team_a && m.team_b)
-      .sort((a,b) => Number(a.court || 0) - Number(b.court || 0) || (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''));
+      .filter(function(m) { return isLiveMatchStatus(m) && !isDoneMatch(m) && m.team_a && m.team_b; })
+      .sort(function(a,b) { return Number(a.court || 0) - Number(b.court || 0) || (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''); });
     div.innerHTML = live.length
-      ? `<div class="card"><b>Matchs lancés</b><br>${live.map(m => `<button class="small-btn" onclick="openLiveMatch(${m.id})">Reprendre · T${m.court} · ${m.team_a} vs ${m.team_b}</button>`).join('')}</div>`
+      ? `<div class="card live-matches-card"><b>Matchs en cours</b><br>${live.map(function(m) { return `<button class="small-btn resume-live-btn" onclick="openLiveMatch(${m.id})">Reprendre la saisie · Terrain ${m.court || '-'} · ${m.team_a} vs ${m.team_b}</button>`; }).join('')}</div>`
       : '<div class="card">Sélectionne un match à lancer ci-dessous.</div>';
   }
 
