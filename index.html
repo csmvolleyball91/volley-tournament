@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tournoi CSM Volleyball 91</title>
-  <link rel="icon" type="image/png" href="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png">
-  <link rel="shortcut icon" href="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png">
-  <link rel="apple-touch-icon" href="https://csmvolleyball91.fr/wp-content/uploads/2021/10/cropped-CSM_Header.png">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="shortcut icon" href="favicon.svg">
+  <link rel="apple-touch-icon" href="favicon.svg">
   <meta name="theme-color" content="#0b3b82">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css">
@@ -32,6 +32,7 @@
     <button onclick="show('score')">Saisie terrain</button>
     <button onclick="show('brackets')">Tableaux</button>
     <button onclick="show('publicView')">Écran public</button>
+    <button onclick="show('history')">Historique</button>
     <button onclick="show('admin')">Admin</button>
   </div>
 
@@ -76,15 +77,22 @@
   </div>
 
   <div id="score" class="section hidden score-screen">
+    <h2>Saisie match</h2>
     <div class="score-access">
-      <input id="courtCode" placeholder="Terrain : T1 à T6" />
       <input id="matchCode" placeholder="Code équipe arbitre" inputmode="numeric" maxlength="4" />
-      <button onclick="loadCourt()">Ouvrir</button>
     </div>
     <div id="courtView"></div>
+    <h3>Matchs à jouer</h3>
+    <p class="small">Choisis un match dans la liste. Dès qu’il est lancé, il disparaît des matchs à jouer.</p>
+    <div id="matchLaunchList" class="match-launch-grid"></div>
   </div>
 
   <div id="publicView" class="section hidden"><h2>Écran public</h2><div id="publicViewContent"></div></div>
+
+  <div id="history" class="section hidden">
+    <h2>Historique</h2>
+    <div id="historyView"></div>
+  </div>
 
   <div id="admin" class="section hidden">
     <h2>Admin</h2>
@@ -110,6 +118,9 @@
       <button onclick="generateBrassage2()">Générer brassage 2</button>
       <button onclick="generateBrackets()">Générer tableaux</button>
       <button onclick="assignRefsAndCodes()">Attribuer arbitres + codes équipe</button>
+      <button onclick="fillRandomMissingResults('Brassage 1')">Test : remplir Brassage 1 aléatoire</button>
+      <button onclick="fillRandomMissingResults('Brassage 2')">Test : remplir Brassage 2 aléatoire</button>
+      <button onclick="fillRandomMissingResults('all')">Test : remplir tous les brassages manquants</button>
       <button class="danger" onclick="resetScores()">Reset tous les scores</button>
 
       <h3>Équipes</h3>
