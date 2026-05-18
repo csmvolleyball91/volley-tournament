@@ -1584,12 +1584,7 @@ body {
 }
 
 
-/* v17.2a7 diagnostic + admin tools */
-.version-banner{
-  position:sticky;top:0;z-index:9999;background:#ffcc00;color:#071b3a;
-  font-weight:900;text-align:center;padding:8px 12px;border-bottom:3px solid #0b3b82;
-  font-size:14px;letter-spacing:.02em;
-}
+/* v17.2a8 admin tools */
 .admin-prompt-tools{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0 18px;
 }
