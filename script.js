@@ -1979,10 +1979,21 @@ setInterval(function(){ if (currentSection === 'publicView') renderPublicView();
 
 
 function isPublicMatchLive(m) {
-  if (!m || m.status === 'done') return false;
+  if (!m) return false;
   const status = String(m.status || '').toLowerCase();
-  if (status === 'live' || status === 'active' || status === 'in_progress' || status === 'started') return true;
-  if (m.started_at && !m.completed_at && !m.finished_at && !m.done_at) return true;
+  if (status === 'done' || status === 'finished' || status === 'completed') return false;
+
+  // Statuts possibles selon les anciennes versions / Supabase.
+  if (['live','active','in_progress','started','ongoing','running','en_cours','in progress'].includes(status)) return true;
+
+  // Si le match est ouvert sur ce navigateur, il doit être affiché EN COURS.
+  if (activeScoreMatchId && String(activeScoreMatchId) === String(m.id)) return true;
+
+  // Fallback local : utile si la colonne started_at n'existe pas ou si Safari garde l'état local.
+  const localStart = (typeof getMatchStartedValue === 'function') ? getMatchStartedValue(m) : '';
+  if (localStart && !m.completed_at && !m.finished_at && !m.done_at) return true;
+
+  // Dernier filet : un score non nul sur un match non terminé = match en cours.
   const a = m.score_a == null ? 0 : Number(m.score_a);
   const b = m.score_b == null ? 0 : Number(m.score_b);
   return (a > 0 || b > 0) && status !== 'pending';
