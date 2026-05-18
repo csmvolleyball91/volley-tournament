@@ -495,18 +495,33 @@ function renderStandings() {
   const phases = [...new Set(matches.map(m => m.phase))].filter(p => p.includes('Brassage'));
   let html = '';
   phases.forEach(phase => {
-    html += `<h2>${phase}</h2>`;
     const pools = [...new Set(matches.filter(m => m.phase === phase).map(m => m.pool))].sort();
+    html += `<div class="ranking-phase"><div class="ranking-phase-title"><span>${phase}</span><small>Classement live par poule</small></div><div class="ranking-grid">`;
     pools.forEach(pool => {
-      const rows = poolStats(phase, pool).map(([name,s],i) => `
-        <tr>
-          <td>${i+1}</td><td><b>${name}</b></td><td>${s.score}</td><td>${s.mj}</td>
-          <td>${s.v}</td><td>${s.d}</td><td>${s.diff}</td><td>${s.pm}</td>
+      const statsRows = poolStats(phase, pool);
+      const topThree = statsRows.slice(0,3).map(([name,s],i) => `
+        <div class="ranking-podium-item rank-${i+1}">
+          <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+          <strong>${name}</strong>
+          <small>${s.score}</small>
+        </div>
+      `).join('');
+      const rows = statsRows.map(([name,s],i) => `
+        <tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}">
+          <td><span class="rank-badge">${i+1}</span></td>
+          <td class="team-cell"><b>${name}</b></td>
+          <td class="score-cell">${s.score}</td>
+          <td>${s.mj}</td>
+          <td>${s.v}</td>
+          <td>${s.d}</td>
+          <td class="diff-cell ${s.diff >= 0 ? 'positive' : 'negative'}">${s.diff}</td>
+          <td>${s.pm}</td>
         </tr>
       `).join('');
-      html += `<h3>Poule ${pool}</h3>
-        <table><tr><th>#</th><th>Équipe</th><th>Score</th><th>MJ</th><th>V</th><th>D</th><th>Diff</th><th>PM</th></tr>${rows}</table>`;
+      html += `<section class="ranking-card"><div class="ranking-card-head"><h3>Poule ${pool}</h3><span>${statsRows.length} équipes</span></div><div class="ranking-podium">${topThree}</div>
+        <div class="table-scroll"><table class="ranking-table"><tr><th>#</th><th>Équipe</th><th>Score</th><th>MJ</th><th>V</th><th>D</th><th>Diff</th><th>PM</th></tr>${rows}</table></div></section>`;
     });
+    html += `</div></div>`;
   });
   div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
 }
@@ -1607,10 +1622,21 @@ function renderBrackets() {
   if (!rankDiv || !bracketDiv) return;
 
   const ranking = globalRanking();
-  rankDiv.innerHTML = `<h3>Classement tableaux</h3><p class="muted">Tri : B2 prioritaire, puis B1 en cas d'égalité.</p><table>
-    <tr><th>#</th><th>Équipe</th><th>B2</th><th>B1</th></tr>
-    ${ranking.map((r,i) => `<tr><td>${i+1}</td><td><b>${r.name}</b></td><td>${r.b2Score}</td><td>${r.b1Score}</td></tr>`).join('')}
-  </table>`;
+  const topSeeds = ranking.slice(0,3).map((r,i) => `
+    <div class="global-top-card rank-${i+1}">
+      <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+      <strong>${r.name}</strong>
+      <small>B2 ${r.b2Score} · B1 ${r.b1Score}</small>
+    </div>
+  `).join('');
+  rankDiv.innerHTML = `<section class="global-ranking-card">
+    <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+    <div class="global-top3">${topSeeds}</div>
+    <div class="table-scroll"><table class="ranking-table global-ranking-table">
+      <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${r.name}</b></td><td>${r.b1Score}</td><td class="score-cell">${r.b2Score}</td></tr>`).join('')}
+    </table></div>
+  </section>`;
 
   const bracketMatches = matches.filter(m => m.bracket).sort((a,b) =>
     (a.bracket || '').localeCompare(b.bracket || '') ||
