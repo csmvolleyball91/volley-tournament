@@ -9,13 +9,14 @@
 </head>
 <body>
   <h1>🏐 Tournoi Volley Live</h1>
-  <p class="small">24 équipes · 6 terrains · brassage 1 · scores partagés en live</p>
+  <p class="small" id="subtitle">Chargement...</p>
 
   <div class="grid">
     <button onclick="show('teams')">Voir mes matchs</button>
     <button onclick="show('planning')">Planning</button>
     <button onclick="show('standings')">Classements</button>
     <button onclick="show('score')">Saisie terrain</button>
+    <button onclick="show('admin')">Admin</button>
   </div>
 
   <div id="teams" class="section hidden">
@@ -26,7 +27,14 @@
 
   <div id="planning" class="section hidden">
     <h2>Planning</h2>
-    <select id="courtFilter">
+    <select id="phaseFilter" onchange="renderPlanning()">
+      <option value="">Toutes les phases</option>
+      <option value="Brassage 1">Brassage 1</option>
+      <option value="Brassage 2">Brassage 2</option>
+      <option value="Tableau principal">Tableau principal</option>
+      <option value="Consolante">Consolante</option>
+    </select>
+    <select id="courtFilter" onchange="renderPlanning()">
       <option value="">Tous les terrains</option>
       <option value="1">Terrain 1</option>
       <option value="2">Terrain 2</option>
@@ -48,6 +56,38 @@
     <input id="courtCode" placeholder="Code terrain : T1 à T6" />
     <button onclick="loadCourt()">Ouvrir terrain</button>
     <div id="courtView"></div>
+  </div>
+
+  <div id="admin" class="section hidden">
+    <h2>Admin</h2>
+    <input id="adminCode" placeholder="Code admin" type="password" />
+    <button onclick="unlockAdmin()">Déverrouiller admin</button>
+
+    <div id="adminPanel" class="hidden">
+      <h3>Configuration tournoi</h3>
+      <label>Départ tournoi</label>
+      <input id="cfgStart" type="time" />
+      <label>Durée match brassage (min)</label>
+      <input id="cfgDuration" type="number" />
+      <label>Pause entre matchs (min)</label>
+      <input id="cfgBreak" type="number" />
+      <label>Pause entre brassage 1 et 2 (min)</label>
+      <input id="cfgRoundBreak" type="number" />
+      <label>Nombre de terrains</label>
+      <input id="cfgCourts" type="number" />
+      <button onclick="saveSettings()">Sauvegarder configuration</button>
+
+      <h3>Actions</h3>
+      <button onclick="regenerateBrassage1()">Régénérer brassage 1 avec horaires</button>
+      <button class="danger" onclick="resetScores()">Reset tous les scores</button>
+
+      <h3>Équipes</h3>
+      <p class="small">Tu pourras remplacer les noms la veille ici, sans toucher au code.</p>
+      <div id="teamsAdmin"></div>
+      <button onclick="saveTeams()">Sauvegarder noms équipes</button>
+    </div>
+
+    <div id="adminMsg" class="card"></div>
   </div>
 
   <script>
