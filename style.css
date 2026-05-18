@@ -507,3 +507,82 @@ th {
   opacity: .35;
   cursor: not-allowed;
 }
+
+
+.score-screen {
+  padding: 0;
+}
+.score-access {
+  display:flex;
+  gap:8px;
+  margin-bottom:12px;
+}
+.score-access input, .score-access button { flex:1; }
+.scoreboard-full {
+  position: relative;
+  display:flex;
+  min-height: 78vh;
+  border-radius: 24px;
+  overflow:hidden;
+  box-shadow: var(--shadow);
+}
+.score-half {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:space-between;
+  padding: 18px 12px;
+  color:white;
+}
+.team-a { background:#0d7ae8; }
+.team-b { background:#ff174f; }
+.team-title {
+  font-size: clamp(24px,4vw,56px);
+  font-weight: 800;
+  text-align:center;
+  margin-top: 10px;
+}
+.mega-score {
+  font-size: clamp(140px,22vw,340px);
+  font-weight: 900;
+  line-height: 1;
+}
+.score-action {
+  width: 90px;
+  height: 90px;
+  border-radius: 20px;
+  font-size: 56px;
+  font-weight: 900;
+  border:none;
+}
+.center-controls {
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+}
+.reset-btn {
+  width:84px;height:84px;border-radius:50%;font-size:40px;
+}
+.mini-meta {
+  background: rgba(255,255,255,0.9);
+  padding:8px 14px;
+  border-radius:999px;
+  font-weight:700;
+}
+.finish-btn { width:auto; min-width:140px; }
+
+@media (max-width: 768px) {
+  body { max-width:100%; padding:8px; }
+  .hero, .nav-grid { display:none; }
+  .scoreboard-full { min-height: 88vh; border-radius: 0; }
+  .score-action { width:72px; height:72px; font-size:44px; }
+  .mega-score { font-size: 30vw; }
+  .team-title { font-size: 10vw; }
+  .score-access { position: sticky; top:0; z-index:10; background:white; padding:6px; }
+}
