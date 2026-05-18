@@ -64,11 +64,12 @@
     <div id="bracketsView"></div>
   </div>
 
-  <div id="score" class="section hidden">
-    <h2>Saisie terrain</h2>
-    <input id="courtCode" placeholder="Code terrain : T1 à T6" />
-    <input id="matchCode" placeholder="Code match à 6 chiffres" inputmode="numeric" maxlength="6" />
-    <button onclick="loadCourt()">Ouvrir terrain</button>
+  <div id="score" class="section hidden score-screen">
+    <div class="score-access">
+      <input id="courtCode" placeholder="Terrain : T1 à T6" />
+      <input id="matchCode" placeholder="Code équipe arbitre" inputmode="numeric" maxlength="4" />
+      <button onclick="loadCourt()">Ouvrir</button>
+    </div>
     <div id="courtView"></div>
   </div>
 
@@ -95,7 +96,7 @@
       <button onclick="regenerateBrassage1()">Régénérer brassage 1 avec horaires</button>
       <button onclick="generateBrassage2()">Générer brassage 2</button>
       <button onclick="generateBrackets()">Générer tableaux</button>
-      <button onclick="assignRefsAndCodes()">Attribuer arbitres + codes aux matchs existants</button>
+      <button onclick="assignRefsAndCodes()">Attribuer arbitres + codes équipe</button>
       <button class="danger" onclick="resetScores()">Reset tous les scores</button>
 
       <h3>Équipes</h3>
