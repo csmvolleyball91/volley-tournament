@@ -1,3 +1,4 @@
+/* v17.3g scoreboard polish */
 
 function minutesFromHHMM(value) {
   const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);

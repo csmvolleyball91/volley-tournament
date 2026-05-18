@@ -2177,3 +2177,9 @@ body {
 @media (max-width: 520px) {
   .court-status-grid { grid-template-columns: 1fr; }
 }
+
+/* v17.3g scoreboard polish */
+.score-btn, .score-button { min-width:64px; min-height:64px; font-size:1.6rem; }
+.score-display { font-size:3rem; font-weight:800; }
+.finish-match-btn { padding:16px 24px; font-size:1.2rem; font-weight:700; }
+.service-indicator { transform: scale(1.4); margin-left:10px; }
