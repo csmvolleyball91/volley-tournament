@@ -2317,3 +2317,207 @@ setInterval(function() {
     if (currentSection === 'publicView') renderPublicView();
   }
 }, 10000);
+
+/* v17.3j reprise refresh + anti double arbitre + validation score */
+function volleyDeviceId() {
+  const key = 'volley_device_id';
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = 'dev_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch(e) {
+    return 'dev_session';
+  }
+}
+
+function activeMatchStorageKey() { return 'volley_active_score_match_id'; }
+function matchLockStorageKey(id) { return 'volley_match_lock_' + id; }
+function matchCodeStorageKey(id) { return 'volley_match_code_' + id; }
+
+function setLocalMatchSession(id, code) {
+  try {
+    localStorage.setItem(activeMatchStorageKey(), String(id));
+    localStorage.setItem(matchLockStorageKey(id), volleyDeviceId());
+    if (code) localStorage.setItem(matchCodeStorageKey(id), normalizeCode(code));
+  } catch(e) {}
+}
+
+function clearLocalMatchSession(id) {
+  try {
+    localStorage.removeItem(activeMatchStorageKey());
+    if (id != null) {
+      localStorage.removeItem(matchLockStorageKey(id));
+      localStorage.removeItem(matchCodeStorageKey(id));
+    }
+  } catch(e) {}
+}
+
+function hasLocalMatchSession(id) {
+  try {
+    return localStorage.getItem(matchLockStorageKey(id)) === volleyDeviceId();
+  } catch(e) {
+    return false;
+  }
+}
+
+function restoreActiveScoreMatch() {
+  try {
+    if (activeScoreMatchId) return;
+    const id = localStorage.getItem(activeMatchStorageKey());
+    if (!id) return;
+    const m = matches.find(function(x) { return String(x.id) === String(id); });
+    if (m && !isDoneMatch(m) && isLiveMatchStatus(m) && hasLocalMatchSession(m.id)) {
+      activeScoreMatchId = m.id;
+    }
+  } catch(e) {}
+}
+
+function codeForMatch(m) {
+  const memoryCode = normalizeCode(matchEditCodes[m.id]);
+  if (memoryCode) return memoryCode;
+  try { return normalizeCode(localStorage.getItem(matchCodeStorageKey(m.id))); } catch(e) { return ''; }
+}
+
+function canEditMatch(m) {
+  return hasLocalMatchSession(m.id) && validateCodeForMatch(m, codeForMatch(m));
+}
+
+function askRefCodeForMatch(m) {
+  const label = isBracketMatch(m)
+    ? 'Code arbitre de l’équipe qui arbitre ce match'
+    : `Code arbitre de ${m.referee_team || 'l’équipe arbitre'}`;
+  const code = prompt(`${label} :`);
+  if (code === null) return null;
+  const clean = normalizeCode(code);
+  if (!validateCodeForMatch(m, clean)) {
+    alert(isBracketMatch(m) ? 'Code arbitre inconnu.' : 'Code arbitre incorrect pour ce match.');
+    return null;
+  }
+  matchEditCodes[m.id] = clean;
+  try { localStorage.setItem(matchCodeStorageKey(m.id), clean); } catch(e) {}
+  return clean;
+}
+
+function validateFinalScore(m) {
+  const a = Number(m.score_a == null ? 0 : m.score_a);
+  const b = Number(m.score_b == null ? 0 : m.score_b);
+  if (a === 0 && b === 0) {
+    return 'Score invalide : le match est à 0-0. Saisis au moins un point avant de terminer.';
+  }
+  if (a === b) {
+    return 'Score invalide : un match doit avoir un vainqueur, avec au moins 1 point d’écart.';
+  }
+  return '';
+}
+
+async function launchMatch(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+
+  if (isDoneMatch(m)) {
+    alert('Ce match est déjà terminé. Utilise l’admin si tu dois le corriger.');
+    return;
+  }
+
+  if (isLiveMatchStatus(m)) {
+    if (!hasLocalMatchSession(m.id)) {
+      alert('Ce match est déjà en cours de saisie sur un autre appareil. Si c’est une erreur, utilise le reset admin.');
+      return;
+    }
+    activeScoreMatchId = m.id;
+    renderScoreSection();
+    return;
+  }
+
+  const otherLive = activeMatchOnCourt(m.court, m.id);
+  if (otherLive) {
+    alert('Terrain ' + (m.court || '-') + ' déjà occupé par : ' + otherLive.team_a + ' vs ' + otherLive.team_b + '. Termine ou reset ce match avant d’en lancer un autre.');
+    return;
+  }
+
+  const code = askRefCodeForMatch(m);
+  if (!code) return;
+
+  const startedAt = new Date().toISOString();
+  const update = { status: 'live', started_at: startedAt };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(code);
+    if (refTeam) update.referee_team = refTeam;
+  }
+
+  let result = await client.from('matches').update(update).eq('id', id);
+  if (result.error) {
+    const fallback = { status: 'live' };
+    if (update.referee_team) fallback.referee_team = update.referee_team;
+    result = await client.from('matches').update(fallback).eq('id', id);
+  }
+  if (result.error) {
+    alert('Erreur lancement match : ' + result.error.message);
+    return;
+  }
+
+  saveLocalStartedTime(id, startedAt);
+  setLocalMatchSession(id, code);
+  activeScoreMatchId = id;
+  await loadData();
+}
+
+function openLiveMatch(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+  if (isLiveMatchStatus(m) && !hasLocalMatchSession(m.id)) {
+    alert('Ce match est déjà en cours de saisie sur un autre appareil.');
+    return;
+  }
+  if (!canEditMatch(m)) {
+    const code = askRefCodeForMatch(m);
+    if (!code) return;
+    setLocalMatchSession(m.id, code);
+  }
+  activeScoreMatchId = id;
+  renderScoreSection();
+}
+
+async function finishMatch(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+  const invalid = validateFinalScore(m);
+  if (invalid) {
+    alert(invalid);
+    return;
+  }
+  const a = Number(m.score_a == null ? 0 : m.score_a);
+  const b = Number(m.score_b == null ? 0 : m.score_b);
+  if (!confirm(`Confirmer le score ?\n${m.team_a}: ${a}\n${m.team_b}: ${b}`)) return;
+  const winner = a > b ? m.team_a : m.team_b;
+  const completedAt = new Date().toISOString();
+  let result = await client.from('matches').update({ status: 'done', winner: winner, completed_at: completedAt }).eq('id', id);
+  if (result.error) {
+    result = await client.from('matches').update({ status: 'done', winner: winner }).eq('id', id);
+  }
+  if (result.error) {
+    alert('Erreur fin de match : ' + result.error.message);
+    return;
+  }
+  saveLocalCompletedTime(id, completedAt);
+  delete matchEditCodes[id];
+  clearLocalMatchSession(id);
+  if (String(activeScoreMatchId) === String(id)) activeScoreMatchId = null;
+  await loadData();
+}
+
+const renderScoreSectionBase_v173j = renderScoreSection;
+renderScoreSection = function() {
+  restoreActiveScoreMatch();
+  renderScoreSectionBase_v173j();
+};
+
+const loadDataBase_v173j = loadData;
+loadData = async function() {
+  await loadDataBase_v173j();
+  restoreActiveScoreMatch();
+  if (currentSection === 'score') renderScoreSection();
+};
