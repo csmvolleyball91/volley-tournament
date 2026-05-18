@@ -76,6 +76,7 @@ function renderTeamMatches() {
       <b>${m.scheduled_time || ''} — Terrain ${m.court}</b><br>
       ${m.phase} · Poule ${m.pool || '-'}<br>
       ${m.team_a} vs ${m.team_b}<br>
+      Arbitre : <b>${m.referee_team || '-'}</b><br>
       Score : ${scoreText(m)}<br>
       ${statusText(m)}
     </div>
@@ -174,7 +175,7 @@ function canEditMatch(m) {
 }
 
 function lockedMatchHtml(m) {
-  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Entrer le code match à 6 chiffres pour modifier.</span></div>`;
+  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Entrer le code de l'équipe arbitre à 4 chiffres pour modifier.</span></div>`;
 }
 
 function loadCourt(showError = true) {
@@ -211,36 +212,26 @@ function loadCourt(showError = true) {
   }
 
   div.innerHTML = `
-    <div class="scoreboard">
-      <div class="scoreboard-top">
-        <div>
-          <b>Terrain ${court} — Match #${m.id}</b><br>
-          <span>${m.scheduled_time || ''} · ${m.phase} · Poule ${m.pool || '-'} · Arbitre : ${m.referee_team || '-'}</span>
-        </div>
-        <span class="score-status">${statusText(m)}</span>
+    <div class="scoreboard-full">
+      <div class="score-half team-a">
+        <div class="team-title">${m.team_a}</div>
+        <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', 1)"` : 'disabled'}>+</button>
+        <div class="mega-score">${m.score_a ?? 0}</div>
+        <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', -1)"` : 'disabled'}>−</button>
       </div>
 
-      <div class="score-row">
-        <button class="score-btn minus" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', -1)"` : 'disabled'}>−</button>
-        <div class="team-score-box">
-          <div class="team-name">${m.team_a}</div>
-          <div class="big-score">${m.score_a ?? 0}</div>
-        </div>
-        <button class="score-btn plus" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'a', 1)"` : 'disabled'}>+</button>
+      <div class="center-controls">
+        <button class="reset-btn" onclick="loadCourt(false)">⟳</button>
+        <div class="mini-meta">T${court} · ${m.phase}</div>
+        ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Terminer</button>` : lockedMatchHtml(m)}
       </div>
 
-      <div class="vs-mini">VS</div>
-
-      <div class="score-row">
-        <button class="score-btn minus" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', -1)"` : 'disabled'}>−</button>
-        <div class="team-score-box">
-          <div class="team-name">${m.team_b}</div>
-          <div class="big-score">${m.score_b ?? 0}</div>
-        </div>
-        <button class="score-btn plus" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', 1)"` : 'disabled'}>+</button>
+      <div class="score-half team-b">
+        <div class="team-title">${m.team_b}</div>
+        <button class="score-action top-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', 1)"` : 'disabled'}>+</button>
+        <div class="mega-score">${m.score_b ?? 0}</div>
+        <button class="score-action bottom-action" ${canEditMatch(m) ? `onclick="changePoint(${m.id}, 'b', -1)"` : 'disabled'}>−</button>
       </div>
-
-      ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Fin du match</button>` : lockedMatchHtml(m)}
     </div>
   `;
 }
@@ -318,9 +309,15 @@ function renderAdmin() {
 
   const codesDiv = document.getElementById('codesAdmin');
   if (codesDiv && adminUnlocked) {
-    const list = [...matches].sort((a,b) => (a.scheduled_time || '').localeCompare(b.scheduled_time || '') || Number(a.court)-Number(b.court));
-    codesDiv.innerHTML = `<table><tr><th>Match</th><th>Arbitre</th><th>Code</th></tr>` +
-      list.map(m => `<tr><td>#${m.id} ${m.team_a} vs ${m.team_b}</td><td>${m.referee_team || '-'}</td><td><b>${m.access_code || '-'}</b></td></tr>`).join('') +
+    const codeMap = buildTeamRefCodeMap(matches);
+    const refCount = {};
+    matches.forEach(m => {
+      if (!m.referee_team) return;
+      refCount[m.referee_team] = (refCount[m.referee_team] || 0) + 1;
+    });
+    codesDiv.innerHTML = `<h3>Codes arbitres par équipe</h3>` +
+      `<table><tr><th>Équipe</th><th>Code arbitre</th><th>Matchs à arbitrer</th></tr>` +
+      teams.map(t => `<tr><td>${t.name}</td><td><b>${codeMap[t.name] || '-'}</b></td><td>${refCount[t.name] || 0}</td></tr>`).join('') +
       `</table>`;
   }
 }
@@ -357,8 +354,44 @@ function addMinutes(time, minutes) {
 }
 
 
-function code6(n) {
-  return String(n).padStart(6, '0');
+function code4() {
+  return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+}
+
+function generateUniqueCode(usedCodes) {
+  let code = code4();
+  while (usedCodes.has(code)) code = code4();
+  usedCodes.add(code);
+  return code;
+}
+
+function buildTeamRefCodeMap(sourceMatches = matches) {
+  const usedCodes = new Set();
+  const map = {};
+
+  // On conserve le premier code déjà trouvé pour une équipe arbitre.
+  // Ensuite, tous les matchs arbitrés par cette équipe reprennent ce même code.
+  sourceMatches.forEach(m => {
+    if (!m.referee_team || !m.access_code) return;
+    if (!map[m.referee_team]) {
+      map[m.referee_team] = m.access_code;
+      usedCodes.add(m.access_code);
+    }
+  });
+
+  teams.forEach(t => {
+    if (!map[t.name]) map[t.name] = generateUniqueCode(usedCodes);
+  });
+
+  return map;
+}
+
+function withTeamAccessCodes(rows) {
+  const codeMap = buildTeamRefCodeMap(matches);
+  return rows.map(r => ({
+    ...r,
+    access_code: r.referee_team ? codeMap[r.referee_team] : null
+  }));
 }
 
 function pickReferee(poolTeams, teamA, teamB, slot) {
@@ -368,7 +401,8 @@ function pickReferee(poolTeams, teamA, teamB, slot) {
 }
 
 function withAccessCodes(rows, start = 1) {
-  return rows.map((r, idx) => ({ ...r, access_code: code6(start + idx) }));
+  // Compatibilité ancien nom : maintenant le code dépend de l'équipe arbitre, pas du match.
+  return withTeamAccessCodes(rows);
 }
 
 function generateBrassage1Rows() {
@@ -718,7 +752,7 @@ function teamsFromMatchPool(phase, pool) {
 
 async function assignRefsAndCodes() {
   if (!adminUnlocked) return;
-  if (!confirm('Attribuer arbitres et codes 6 chiffres à tous les matchs existants ?')) return;
+  if (!confirm('Attribuer arbitres et codes équipe à 4 chiffres ? Chaque équipe gardera le même code tout le tournoi.')) return;
 
   const sorted = [...matches].sort((a,b) =>
     (a.phase || '').localeCompare(b.phase || '') ||
@@ -729,6 +763,10 @@ async function assignRefsAndCodes() {
   );
 
   let n = 1;
+
+  // Génère / conserve un seul code par équipe, puis le recopie sur chaque match arbitré.
+  const teamCodeMap = buildTeamRefCodeMap(matches);
+
   for (const m of sorted) {
     let referee = m.referee_team;
     if ((m.phase || '').includes('Brassage') && m.pool) {
@@ -736,14 +774,15 @@ async function assignRefsAndCodes() {
       const available = poolTeams.filter(t => t !== m.team_a && t !== m.team_b);
       referee = available.length ? available[(n-1) % available.length] : referee;
     }
+
     await client.from('matches').update({
       referee_team: referee,
-      access_code: code6(n)
+      access_code: referee ? teamCodeMap[referee] : null
     }).eq('id', m.id);
     n++;
   }
 
-  document.getElementById('adminMsg').innerText = 'Arbitres et codes attribués ✅';
+  document.getElementById('adminMsg').innerText = 'Arbitres attribués + codes équipe appliqués ✅';
   await loadData();
 }
 
