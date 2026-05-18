@@ -754,3 +754,5 @@ th {
   .brand-row { gap: 10px; }
   .club-logo { width: 160px; max-height: 70px; }
 }
+
+.service-indicator{color:white;font-weight:700;margin:10px 0;font-size:14px}.public-grid{display:grid;gap:12px}
