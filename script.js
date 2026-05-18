@@ -51,6 +51,17 @@ function scoreText(m) {
   return m.score_a === null || m.score_b === null ? '-' : `${m.score_a} / ${m.score_b}`;
 }
 
+function servingSide(m) {
+  // Service automatique sans champ Supabase dédié :
+  // on alterne à chaque point à partir de l'équipe A.
+  const total = (m.score_a ?? 0) + (m.score_b ?? 0);
+  return total % 2 === 0 ? 'a' : 'b';
+}
+
+function servingText(m) {
+  return servingSide(m) === 'b' ? m.team_b : m.team_a;
+}
+
 function statusText(m) {
   return m.status === 'done'
     ? '<span class="ok">Terminé</span>'
@@ -237,7 +248,7 @@ function loadCourt(showError = true) {
 
       <div class="center-controls">
         <div class="mini-meta">T${court} · ${m.phase}</div>
-        <div class="service-indicator">${m.serving_team === 'b' ? m.team_b : m.team_a} 🏐 service</div>
+        <div class="service-indicator">${servingText(m)} 🏐 service</div>
         ${canEditMatch(m) ? `<button class="danger finish-btn" onclick="finishMatch(${m.id})">Terminer</button>` : lockedMatchHtml(m)}
       </div>
 
@@ -259,9 +270,11 @@ async function changePoint(id, side, delta) {
   const currentB = m.score_b ?? 0;
   const newA = side === 'a' ? Math.max(0, currentA + delta) : currentA;
   const newB = side === 'b' ? Math.max(0, currentB + delta) : currentB;
-  const currentServing = m.serving_team || 'a';
-  const nextServing = currentServing === 'a' ? 'b' : 'a';
-  await client.from('matches').update({ score_a: newA, score_b: newB, serving_team: nextServing }).eq('id', id);
+  const { error } = await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
+  if (error) {
+    alert('Erreur mise à jour score : ' + error.message);
+    return;
+  }
   await loadData();
 }
 
@@ -269,9 +282,11 @@ async function addPoint(id, side) {
   const m = matches.find(x => x.id === id);
   const newA = (m.score_a ?? 0) + (side === 'a' ? 1 : 0);
   const newB = (m.score_b ?? 0) + (side === 'b' ? 1 : 0);
-  const currentServing = m.serving_team || 'a';
-  const nextServing = currentServing === 'a' ? 'b' : 'a';
-  await client.from('matches').update({ score_a: newA, score_b: newB, serving_team: nextServing }).eq('id', id);
+  const { error } = await client.from('matches').update({ score_a: newA, score_b: newB }).eq('id', id);
+  if (error) {
+    alert('Erreur mise à jour score : ' + error.message);
+    return;
+  }
   await loadData();
 }
 
