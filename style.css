@@ -2183,3 +2183,64 @@ body {
 .score-display { font-size:3rem; font-weight:800; }
 .finish-match-btn { padding:16px 24px; font-size:1.2rem; font-weight:700; }
 .service-indicator { transform: scale(1.4); margin-left:10px; }
+
+
+/* v17.3h - timeline premium + anti double lancement UX */
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-premium-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: #eef4fb;
+  color: #28496f;
+  border: 1px solid rgba(11,59,130,.12);
+  box-shadow: 0 4px 14px rgba(11,59,130,.06);
+}
+.timeline-premium-step .timeline-index {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #0b3b82;
+  font-size: 12px;
+  font-weight: 950;
+}
+.timeline-premium-step.done {
+  background: rgba(15, 122, 68, .10);
+  color: #0f6b40;
+}
+.timeline-premium-step.done .timeline-index {
+  background: #0f7a44;
+  color: #fff;
+}
+.timeline-premium-step.active {
+  background: linear-gradient(135deg, #0b3b82, #1167c4);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(11,59,130,.25);
+}
+.timeline-premium-step.active .timeline-index {
+  background: #f7c948;
+  color: #0b3b82;
+}
+.timeline-connector {
+  width: 28px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(11,59,130,.22);
+}
+@media (max-width: 720px) {
+  .timeline { gap: 6px; }
+  .timeline-connector { display: none; }
+  .timeline-premium-step { width: 100%; justify-content: flex-start; }
+}
