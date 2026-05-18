@@ -1,3 +1,15 @@
+// v17.3m2 - safety helpers loaded first
+function getMatchStartedAt(m) {
+  if (!m) return '';
+  try {
+    var key = m.id ? ('match_started_at_' + m.id) : '';
+    return m.started_at || m.start_actual || m.startedAt || (key ? localStorage.getItem(key) : '') || '';
+  } catch (e) {
+    return (m && (m.started_at || m.start_actual || m.startedAt)) || '';
+  }
+}
+window.getMatchStartedAt = getMatchStartedAt;
+
 /* v17.3g scoreboard polish */
 
 function minutesFromHHMM(value) {
@@ -335,6 +347,8 @@ function saveLocalStartedTime(id, value) {
 function getMatchStartedValue(m) {
   return m.started_at || m.start_actual || localStorage.getItem(matchStartStorageKey(m.id)) || '';
 }
+
+// getMatchStartedAt is defined at the top for Safari/cache safety.
 
 function timeFromIsoOrTime(value) {
   if (!value) return '';
@@ -2533,7 +2547,7 @@ function chronoDurationMinutes() {
 }
 
 function matchStartedMs(m) {
-  const raw = getMatchStartedAt ? getMatchStartedAt(m) : (m.started_at || m.start_actual || '');
+  const raw = getMatchStartedAt(m);
   const ms = raw ? new Date(raw).getTime() : 0;
   return Number.isFinite(ms) ? ms : 0;
 }
