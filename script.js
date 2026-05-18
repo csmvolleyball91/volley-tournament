@@ -36,6 +36,17 @@ async function loadData() {
   matches = m || [];
 
   renderAll();
+  ensureVisibleSection();
+}
+
+function ensureVisibleSection() {
+  const loader = document.getElementById('startupLoading');
+  if (loader) loader.style.display = 'none';
+  if (!currentSection) {
+    currentSection = 'teams';
+    const first = document.getElementById('teams');
+    if (first) first.classList.remove('hidden');
+  }
 }
 
 function show(id) {
@@ -43,6 +54,17 @@ function show(id) {
   document.getElementById(id).classList.remove('hidden');
   currentSection = id;
   renderAll();
+  ensureVisibleSection();
+}
+
+function ensureVisibleSection() {
+  const loader = document.getElementById('startupLoading');
+  if (loader) loader.style.display = 'none';
+  if (!currentSection) {
+    currentSection = 'teams';
+    const first = document.getElementById('teams');
+    if (first) first.classList.remove('hidden');
+  }
 }
 
 function renderAll() {
@@ -1011,23 +1033,56 @@ client.channel('matches-live')
   .subscribe();
 
 loadData();
+setInterval(function(){ if (currentSection === 'publicView') renderPublicView(); }, 30000);
 
 
 function renderPublicView() {
   const div = document.getElementById('publicViewContent');
   if (!div) return;
-  const upcoming = matches.filter(m => m.status !== 'done' && m.team_a && m.team_b)
-    .sort((a,b) => Number(a.court)-Number(b.court) || (a.scheduled_time||'').localeCompare(b.scheduled_time||''));
-  const courts = [...new Set(upcoming.map(m=>m.court))];
-  div.innerHTML = courts.map(c => {
-    const cm = upcoming.filter(m=>m.court===c);
-    const now = cm[0];
-    const next = cm[1];
-    return `<div class="card"><h3>Terrain ${c}</h3>
-      <b>EN COURS</b><br>${now ? `${now.team_a} vs ${now.team_b}` : 'Aucun'}<br>
-      <small>Arbitre : ${now && now.referee_team ? now.referee_team : 'Libre'}</small><hr>
-      <b>À SUIVRE</b><br>${next ? `${next.team_a} vs ${next.team_b}` : '—'}<br>
-      <small>Arbitre : ${next && next.referee_team ? next.referee_team : 'Libre'}</small>
-    </div>`;
-  }).join('');
+
+  const now = new Date();
+  const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  const activeMatches = matches
+    .filter(function(m) { return m.team_a && m.team_b && m.status !== 'done'; })
+    .sort(function(a, b) {
+      return Number(a.court) - Number(b.court) || String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || ''));
+    });
+
+  const courts = [];
+  const maxCourts = settings && settings.courts_count ? Number(settings.courts_count) : 0;
+  if (maxCourts > 0) {
+    for (let i = 1; i <= maxCourts; i++) courts.push(i);
+  } else {
+    activeMatches.forEach(function(m) {
+      if (courts.indexOf(Number(m.court)) === -1) courts.push(Number(m.court));
+    });
+  }
+
+  if (!courts.length) {
+    div.innerHTML = '<div class="public-tv"><div class="public-tv-header"><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div class="public-clock">' + clock + '</div></div><div class="public-empty">Aucun match à afficher pour le moment</div></div>';
+    return;
+  }
+
+  div.innerHTML = '<div class="public-tv">' +
+    '<div class="public-tv-header"><div><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div style="opacity:.86;font-weight:800">Matchs en cours et à suivre</div></div><div class="public-clock">' + clock + '</div></div>' +
+    '<div class="public-courts">' + courts.map(function(c) {
+      const courtMatches = activeMatches.filter(function(m) { return Number(m.court) === Number(c); });
+      const current = courtMatches[0];
+      const next = courtMatches[1];
+      const scoreA = current && current.score_a != null ? current.score_a : 0;
+      const scoreB = current && current.score_b != null ? current.score_b : 0;
+      const currentHtml = current ?
+        '<div class="public-current-match">' + current.team_a + '<br><span style="opacity:.55">vs</span><br>' + current.team_b + '</div>' +
+        '<div class="public-scoreline"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>' +
+        '<div class="public-ref">Arbitre : ' + (current.referee_team || 'libre') + '</div>' :
+        '<div class="public-empty">Terrain libre</div>';
+      const nextHtml = next ?
+        '<div class="public-next"><div class="public-match-label">À suivre</div>' + next.team_a + ' vs ' + next.team_b + '<br><span class="public-ref">Arbitre : ' + (next.referee_team || 'libre') + '</span></div>' :
+        '<div class="public-next"><div class="public-match-label">À suivre</div>—</div>';
+      return '<div class="public-court-card">' +
+        '<div class="public-court-top"><div class="public-court-title">Terrain ' + c + '</div><div class="status-pill">EN COURS</div></div>' +
+        '<div class="public-match-label">Match actuel</div>' + currentHtml + nextHtml +
+      '</div>';
+    }).join('') + '</div></div>';
 }
