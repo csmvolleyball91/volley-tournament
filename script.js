@@ -2848,3 +2848,63 @@ renderMatchScoreboard = function(m) {
   setTimeout(function(){ updateChronoDisplays(); maybeWarnChronoEnded(m); }, 50);
   return html;
 };
+
+/* v17.3r - chrono stable : ne se réinitialise plus à chaque point */
+function stableStartedAtKeys(id) {
+  return [
+    'match_started_at_' + id,
+    'volley_match_started_at_' + id,
+    (typeof matchStartStorageKey === 'function' ? matchStartStorageKey(id) : 'volley_match_start_' + id)
+  ];
+}
+
+function getStableLocalStartedAt(id) {
+  try {
+    const keys = stableStartedAtKeys(id);
+    for (let i = 0; i < keys.length; i++) {
+      const v = localStorage.getItem(keys[i]);
+      if (v) return v;
+    }
+  } catch(e) {}
+  return '';
+}
+
+function setStableLocalStartedAt(id, value) {
+  if (!id || !value) return;
+  try {
+    stableStartedAtKeys(id).forEach(function(k) {
+      localStorage.setItem(k, value);
+    });
+  } catch(e) {}
+}
+
+const getMatchStartedAtBase_v173r = getMatchStartedAt;
+getMatchStartedAt = function(m) {
+  if (!m) return '';
+  const id = m.id;
+  const local = id ? getStableLocalStartedAt(id) : '';
+  if (local) return local;
+  const raw = m.started_at || m.start_actual || m.startedAt || '';
+  if (raw && id) setStableLocalStartedAt(id, raw);
+  return raw || (getMatchStartedAtBase_v173r ? getMatchStartedAtBase_v173r(m) : '');
+};
+
+ensureMatchChronoStarted = function(m) {
+  if (!m || !m.id) return '';
+  let raw = getStableLocalStartedAt(m.id);
+  if (raw) {
+    m.started_at = raw;
+    return raw;
+  }
+  raw = m.started_at || m.start_actual || m.startedAt || '';
+  if (!raw) raw = new Date().toISOString();
+  setStableLocalStartedAt(m.id, raw);
+  m.started_at = raw;
+  return raw;
+};
+
+const saveLocalStartedTimeBase_v173r = saveLocalStartedTime;
+saveLocalStartedTime = function(id, value) {
+  setStableLocalStartedAt(id, value);
+  if (saveLocalStartedTimeBase_v173r) saveLocalStartedTimeBase_v173r(id, value);
+};
