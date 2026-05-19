@@ -2793,3 +2793,58 @@ proposeNextMatchAfterFinish = function(finishedMatch) {
     if (confirm(msg)) launchMatch(next.id);
   }, 350);
 };
+
+/* v17.3q - chrono démarre dès la saisie/reprise */
+function ensureMatchChronoStarted(m) {
+  if (!m || !m.id) return '';
+  let raw = getMatchStartedAt(m);
+  if (raw) {
+    try { saveLocalStartedTime(m.id, raw); } catch(e) {}
+    return raw;
+  }
+  raw = new Date().toISOString();
+  try { saveLocalStartedTime(m.id, raw); } catch(e) {}
+  try { localStorage.setItem('volley_match_started_at_' + m.id, raw); } catch(e) {}
+  m.started_at = raw;
+  return raw;
+}
+
+const launchMatchBase_v173q = launchMatch;
+launchMatch = async function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (m && isLiveMatchStatus(m)) {
+    ensureMatchChronoStarted(m);
+  }
+  await launchMatchBase_v173q(id);
+  const refreshed = matches.find(function(x) { return String(x.id) === String(id); });
+  if (refreshed && isLiveMatchStatus(refreshed)) {
+    ensureMatchChronoStarted(refreshed);
+    activeScoreMatchId = id;
+    renderScoreSection();
+  }
+};
+
+const openLiveMatchBase_v173q = openLiveMatch;
+openLiveMatch = function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (m) ensureMatchChronoStarted(m);
+  openLiveMatchBase_v173q(id);
+  const active = matches.find(function(x) { return String(x.id) === String(id); });
+  if (active) {
+    ensureMatchChronoStarted(active);
+    setTimeout(function(){ updateChronoDisplays(); maybeWarnChronoEnded(active); }, 50);
+  }
+};
+
+const renderMatchScoreboardBase_v173q = renderMatchScoreboard;
+renderMatchScoreboard = function(m) {
+  if (m && isLiveMatchStatus(m) && !isDoneMatch(m)) ensureMatchChronoStarted(m);
+  let html = renderMatchScoreboardBase_v173q(m);
+  if (!m || isBracketMatch(m) || isDoneMatch(m)) return html;
+  const chrono = chronoHtml(m);
+  if (chrono && html.indexOf('match-chrono') === -1) {
+    html = html.replace('<div class="mini-meta">', chrono + '<div class="mini-meta">');
+  }
+  setTimeout(function(){ updateChronoDisplays(); maybeWarnChronoEnded(m); }, 50);
+  return html;
+};

@@ -2373,3 +2373,30 @@ body {
   top: -10px;
   font-size: 1.25rem;
 }
+
+
+/* v17.3q chrono visible */
+.match-chrono {
+  margin: 10px auto 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.92);
+  color: #0f172a;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 8px 22px rgba(15,23,42,.14);
+}
+.match-chrono .chrono-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  opacity: .7;
+  margin-right: 8px;
+}
+.match-chrono .chrono-value {
+  font-size: 20px;
+}
+.match-chrono-ended {
+  background: #fee2e2;
+  color: #991b1b;
+}
