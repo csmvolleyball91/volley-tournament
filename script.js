@@ -2717,3 +2717,79 @@ finishMatch = async function(id) {
 };
 
 setInterval(updateChronoDisplays, 1000);
+
+/* v17.3p - chrono persistant + buzzer + prochain match renforcé */
+function playTournamentBuzzer() {
+  try {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return;
+    const ctx = new AudioContextCtor();
+    const now = ctx.currentTime;
+    [0, 0.18, 0.36].forEach(function(offset) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(720, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.14);
+    });
+    setTimeout(function(){ try { ctx.close(); } catch(e) {} }, 900);
+  } catch(e) {}
+}
+
+function startedAtForPersistentChrono(m) {
+  const raw = getMatchStartedAt(m);
+  if (raw) return raw;
+  const fallback = localStorage.getItem('volley_match_started_at_' + (m && m.id));
+  return fallback || '';
+}
+
+// Renforce la persistance : si Supabase n'a pas encore started_at, on s'appuie sur le cache local.
+const matchStartedMsBase_v173p = matchStartedMs;
+matchStartedMs = function(m) {
+  const raw = startedAtForPersistentChrono(m);
+  const ms = raw ? new Date(raw).getTime() : 0;
+  if (Number.isFinite(ms) && ms > 0) return ms;
+  return matchStartedMsBase_v173p ? matchStartedMsBase_v173p(m) : 0;
+};
+
+const maybeWarnChronoEndedBase_v173p = maybeWarnChronoEnded;
+maybeWarnChronoEnded = function(m) {
+  if (!m || !isLiveMatchStatus(m) || isDoneMatch(m)) return;
+  const state = chronoStateForMatch(m);
+  const key = 'volley_chrono_warned_' + m.id;
+  if (!state.ended) return;
+  try {
+    if (localStorage.getItem(key) === '1') return;
+    localStorage.setItem(key, '1');
+  } catch(e) {}
+  setTimeout(function() {
+    playTournamentBuzzer();
+    if (activeScoreMatchId && String(activeScoreMatchId) === String(m.id)) {
+      if (confirm('⏱ Temps écoulé pour ce match.\n\nTerminer le match maintenant ?')) {
+        finishMatch(m.id);
+      }
+    } else {
+      alert('⏱ Temps écoulé sur le terrain ' + (m.court || '-') + '.');
+    }
+  }, 120);
+};
+
+const proposeNextMatchAfterFinishBase_v173p = proposeNextMatchAfterFinish;
+proposeNextMatchAfterFinish = function(finishedMatch) {
+  const next = nextPendingMatchOnCourt(finishedMatch && finishedMatch.court);
+  if (!next) return;
+  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team || 'à définir');
+  const msg = '✅ Terrain ' + (next.court || '-') + ' libre.\n\n' +
+    'Lancer le prochain match ?\n\n' +
+    (next.team_a || 'À définir') + ' vs ' + (next.team_b || 'À définir') + '\n' +
+    'Arbitre attendu : ' + ref;
+  setTimeout(function() {
+    if (confirm(msg)) launchMatch(next.id);
+  }, 350);
+};

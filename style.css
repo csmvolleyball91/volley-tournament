@@ -2355,3 +2355,21 @@ body {
     grid-column: 1 / -1;
   }
 }
+
+
+/* v17.3p - chrono/buzzer polish */
+.match-chrono { position: relative; }
+.match-chrono-ended {
+  animation: chronoPulse 1s ease-in-out infinite;
+}
+@keyframes chronoPulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.center-controls-k .match-chrono-ended::after {
+  content: "🔔";
+  position: absolute;
+  right: -10px;
+  top: -10px;
+  font-size: 1.25rem;
+}
