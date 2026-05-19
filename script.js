@@ -2908,3 +2908,108 @@ saveLocalStartedTime = function(id, value) {
   setStableLocalStartedAt(id, value);
   if (saveLocalStartedTimeBase_v173r) saveLocalStartedTimeBase_v173r(id, value);
 };
+
+/* v17.3s - chrono ultra-stable par match actif, y compris nouveau match */
+window.__volleyChronoStarts = window.__volleyChronoStarts || {};
+
+function chronoMemoryKey(id) {
+  return 'm_' + String(id);
+}
+
+function readAnyStartedAtForMatch(m) {
+  if (!m || !m.id) return '';
+  const id = m.id;
+  const mem = window.__volleyChronoStarts[chronoMemoryKey(id)];
+  if (mem) return mem;
+
+  const candidates = [
+    'volley_chrono_started_at_' + id,
+    'match_started_at_' + id,
+    'volley_match_started_at_' + id,
+    'volley_match_start_' + id
+  ];
+  try {
+    if (typeof matchStartStorageKey === 'function') candidates.push(matchStartStorageKey(id));
+  } catch(e) {}
+
+  try {
+    for (let i = 0; i < candidates.length; i++) {
+      const v = localStorage.getItem(candidates[i]);
+      if (v) {
+        window.__volleyChronoStarts[chronoMemoryKey(id)] = v;
+        return v;
+      }
+    }
+  } catch(e) {}
+
+  const raw = m.started_at || m.start_actual || m.startedAt || '';
+  if (raw) {
+    writeStartedAtEverywhere(id, raw);
+    return raw;
+  }
+  return '';
+}
+
+function writeStartedAtEverywhere(id, value) {
+  if (!id || !value) return;
+  window.__volleyChronoStarts[chronoMemoryKey(id)] = value;
+  const keys = [
+    'volley_chrono_started_at_' + id,
+    'match_started_at_' + id,
+    'volley_match_started_at_' + id,
+    'volley_match_start_' + id
+  ];
+  try {
+    if (typeof matchStartStorageKey === 'function') keys.push(matchStartStorageKey(id));
+  } catch(e) {}
+  try { keys.forEach(function(k) { localStorage.setItem(k, value); }); } catch(e) {}
+}
+
+function ensureStableChronoForMatch(m) {
+  if (!m || !m.id) return '';
+  let started = readAnyStartedAtForMatch(m);
+  if (!started) started = new Date().toISOString();
+  writeStartedAtEverywhere(m.id, started);
+  m.started_at = started;
+  return started;
+}
+
+getMatchStartedAt = function(m) {
+  return readAnyStartedAtForMatch(m);
+};
+
+ensureMatchChronoStarted = function(m) {
+  return ensureStableChronoForMatch(m);
+};
+
+saveLocalStartedTime = function(id, value) {
+  writeStartedAtEverywhere(id, value);
+};
+
+matchStartedMs = function(m) {
+  const raw = readAnyStartedAtForMatch(m);
+  const ms = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const changePointBase_v173s = changePoint;
+changePoint = async function(id, side, delta) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (m) ensureStableChronoForMatch(m);
+  await changePointBase_v173s(id, side, delta);
+  const refreshed = matches.find(function(x) { return String(x.id) === String(id); });
+  if (refreshed) ensureStableChronoForMatch(refreshed);
+  setTimeout(updateChronoDisplays, 30);
+};
+
+const addPointBase_v173s = typeof addPoint === 'function' ? addPoint : null;
+if (addPointBase_v173s) {
+  addPoint = async function(id, side) {
+    const m = matches.find(function(x) { return String(x.id) === String(id); });
+    if (m) ensureStableChronoForMatch(m);
+    await addPointBase_v173s(id, side);
+    const refreshed = matches.find(function(x) { return String(x.id) === String(id); });
+    if (refreshed) ensureStableChronoForMatch(refreshed);
+    setTimeout(updateChronoDisplays, 30);
+  };
+}
