@@ -3013,3 +3013,72 @@ if (addPointBase_v173s) {
     setTimeout(updateChronoDisplays, 30);
   };
 }
+
+/* v17.3t - reset complet : purge reprise/chrono après reset */
+function clearStartedAtEverywhere(id) {
+  if (!id) return;
+  try {
+    if (window.__volleyChronoStarts) delete window.__volleyChronoStarts[chronoMemoryKey(id)];
+  } catch(e) {}
+  const keys = [
+    'volley_chrono_started_at_' + id,
+    'match_started_at_' + id,
+    'volley_match_started_at_' + id,
+    'volley_match_start_' + id,
+    'volley_started_time_' + id
+  ];
+  try {
+    if (typeof matchStartStorageKey === 'function') keys.push(matchStartStorageKey(id));
+  } catch(e) {}
+  try { keys.forEach(function(k) { localStorage.removeItem(k); }); } catch(e) {}
+}
+
+function clearMatchRuntimeLocalState(id) {
+  clearStartedAtEverywhere(id);
+  try { clearLocalMatchSession(id); } catch(e) {}
+  try { clearLocalCompletedTime(id); } catch(e) {}
+  try { delete matchEditCodes[id]; } catch(e) {}
+}
+
+// Important : un ancien cache local ne doit plus suffire à faire apparaître un match en "Reprendre".
+// La reprise est réservée aux matchs réellement live, ou à un score déjà saisi.
+isStartedForResume = function(m) {
+  if (!m || !m.team_a || !m.team_b || isDoneMatch(m)) return false;
+  return isLiveMatchStatus(m) || hasScoreStarted(m);
+};
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet de tous les scores ?\n\nLes scores, vainqueurs, statuts live et chronos de reprise seront remis à zéro.')) return;
+
+  const fullPayload = {
+    score_a: 0,
+    score_b: 0,
+    winner: null,
+    status: 'pending',
+    started_at: null,
+    completed_at: null
+  };
+
+  let result = await client.from('matches').update(fullPayload).neq('id', 0);
+  if (result.error) {
+    result = await client.from('matches').update({
+      score_a: 0,
+      score_b: 0,
+      winner: null,
+      status: 'pending'
+    }).neq('id', 0);
+  }
+
+  if (result.error) {
+    document.getElementById('adminMsg').innerText = 'Erreur reset : ' + result.error.message;
+    return;
+  }
+
+  matches.forEach(function(m) { clearMatchRuntimeLocalState(m.id); });
+  try { localStorage.removeItem(activeMatchStorageKey()); } catch(e) {}
+  activeScoreMatchId = null;
+
+  document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ Scores 0-0, statuts à jouer, chronos/reprises purgés.';
+  await loadData();
+};
