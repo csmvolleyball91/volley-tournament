@@ -3215,3 +3215,75 @@ finishMatch = async function(id) {
   await loadData();
   proposeNextMatchAfterFinish(m);
 };
+
+/* v17.3v - reset tournoi propre : suppression des anciens tableaux + planning par ordre de phase */
+const renderPlanningBase_v173v = typeof renderPlanning === 'function' ? renderPlanning : null;
+renderPlanning = function() {
+  const div = document.getElementById('planningView');
+  if (!div) return;
+  const courtEl = document.getElementById('courtFilter');
+  const court = courtEl ? courtEl.value : '';
+  const phaseEl = document.getElementById('phaseFilter');
+  const phase = phaseEl ? phaseEl.value : '';
+  let list = [...matches];
+  if (court) list = list.filter(m => String(m.court) === court);
+  if (phase) list = list.filter(m => m.phase === phase);
+  list.sort(tournamentPlaySort);
+  div.innerHTML = `<table>
+    <tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>
+    ${list.map(m => `<tr>
+      <td>${computedScheduledTime(m) || ''}</td>
+      <td>T${m.court || '-'}</td>
+      <td>${m.phase || '-'}</td>
+      <td>${m.pool || '-'}</td>
+      <td>#${m.id} ${m.team_a || 'À définir'} vs ${m.team_b || 'À définir'}</td>
+      <td>${m.referee_team || '-'}</td>
+      <td>${scoreText(m)}</td>
+      <td>${statusText(m)}</td>
+    </tr>`).join('')}
+  </table>`;
+};
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nLes scores/chronos seront remis à zéro et les anciens tableaux seront supprimés pour repartir sur Brassage 1.')) return;
+
+  // 1) Supprimer les tableaux déjà générés, sinon ils restent en base et réapparaissent dans Planning.
+  let deleteResult = await client.from('matches').delete().in('phase', ['Tableau principal','Consolante']);
+  if (deleteResult.error) {
+    document.getElementById('adminMsg').innerText = 'Erreur suppression anciens tableaux : ' + deleteResult.error.message;
+    return;
+  }
+
+  // 2) Remettre les matchs de brassage à zéro.
+  const fullPayload = {
+    score_a: 0,
+    score_b: 0,
+    winner: null,
+    status: 'pending',
+    started_at: null,
+    completed_at: null
+  };
+
+  let result = await client.from('matches').update(fullPayload).in('phase', ['Brassage 1','Brassage 2']);
+  if (result.error) {
+    result = await client.from('matches').update({
+      score_a: 0,
+      score_b: 0,
+      winner: null,
+      status: 'pending'
+    }).in('phase', ['Brassage 1','Brassage 2']);
+  }
+
+  if (result.error) {
+    document.getElementById('adminMsg').innerText = 'Erreur reset : ' + result.error.message;
+    return;
+  }
+
+  matches.forEach(function(m) { clearMatchRuntimeLocalState(m.id); });
+  try { localStorage.removeItem(activeMatchStorageKey()); } catch(e) {}
+  activeScoreMatchId = null;
+
+  document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ Anciens tableaux supprimés, Brassage 1/2 remis à 0-0.';
+  await loadData();
+};
