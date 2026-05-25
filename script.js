@@ -1,3 +1,4 @@
+// v18.0 - tri chronologique Voir mes matchs
 // v17.3o - force resume section for running matches
 // v17.3n - safety helpers loaded first
 function getMatchStartedAt(m) {
@@ -501,17 +502,34 @@ function renderTeamSelect() {
   sel.onchange = renderTeamMatches;
 }
 
+function matchSortTimeMinutes(m) {
+  const label = computedScheduledTime(m) || m.scheduled_time || '';
+  const minutes = minutesFromHHMM(label);
+  return minutes === null ? 99999 : minutes;
+}
+
 function renderTeamMatches() {
   const sel = document.getElementById('teamSelect');
   const div = document.getElementById('teamMatches');
   if (!sel || !div || !teams.length) return;
   const name = sel.value || teams[0].name;
-  const list = matches.filter(m => m.team_a === name || m.team_b === name);
+  const list = matches
+    .filter(m => m.team_a === name || m.team_b === name)
+    .sort((a, b) => {
+      const ta = matchSortTimeMinutes(a);
+      const tb = matchSortTimeMinutes(b);
+      if (ta !== tb) return ta - tb;
+      const ca = Number(a.court || 0);
+      const cb = Number(b.court || 0);
+      if (ca !== cb) return ca - cb;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+
   div.innerHTML = list.map(m => `
     <div class="card">
-      <b>${computedScheduledTime(m)} — Terrain ${m.court}</b><br>
-      ${m.phase} · Poule ${m.pool || '-'}<br>
-      ${m.team_a} vs ${m.team_b}<br>
+      <b>${computedScheduledTime(m) || '--:--'} — Terrain ${m.court || '-'}</b><br>
+      ${m.phase || '-'} · Poule ${m.pool || '-'}<br>
+      ${m.team_a || 'À définir'} vs ${m.team_b || 'À définir'}<br>
       Arbitre : <b>${m.referee_team || '-'}</b><br>
       Score : ${scoreText(m)}<br>
       ${statusText(m)}
@@ -3458,6 +3476,80 @@ regenerateBrassage1 = async function() {
   if (!adminUnlocked) return;
   if (!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront archivés.')) return;
   const upd = await client.from('matches').update({ phase: 'Archive', status: 'done', score_a: null, score_b: null, winner: null }).eq('phase', 'Brassage 1');
+  if (upd.error) {
+    document.getElementById('adminMsg').innerText = 'Erreur archivage Brassage 1 : ' + upd.error.message;
+    return;
+  }
+  const rows = generateBrassage1Rows();
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Brassage 1 régénéré ✅';
+  await loadData();
+};
+
+/* v17.3z - correction reset archive sans colonne completed_at */
+async function archiveAllMatchesForReset_v173z() {
+  // Supabase indique que completed_at n'existe pas dans la table matches.
+  // On n'utilise donc que des colonnes déjà présentes dans l'app : phase/status/score/winner.
+  const upd = await client.from('matches').update({
+    phase: 'Archive',
+    status: 'done',
+    score_a: 0,
+    score_b: 0,
+    winner: null
+  }).neq('id', 0);
+  if (upd.error) throw new Error('archivage des anciens matchs : ' + upd.error.message);
+
+  const check = await client.from('matches').select('id, phase, team_a, team_b').neq('phase', 'Archive').limit(5);
+  if (check.error) throw new Error('vérification archivage : ' + check.error.message);
+  if (check.data && check.data.length) {
+    const sample = check.data.map(m => `#${m.id} ${m.phase || '-'} ${m.team_a || '?'} vs ${m.team_b || '?'}`).join(' / ');
+    throw new Error('des matchs actifs restent visibles après archivage : ' + sample);
+  }
+}
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nLes anciens matchs seront archivés, les chronos/reprises purgés, puis Brassage 1 sera recréé seul.')) return;
+
+  const adminMsg = document.getElementById('adminMsg');
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours : archivage des anciens matchs...';
+
+  try {
+    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+  } catch(e) {}
+  activeScoreMatchId = null;
+
+  try {
+    await archiveAllMatchesForReset_v173z();
+  } catch (e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message + '\n\nJe ne recrée pas Brassage 1 par-dessus pour éviter les doublons.');
+    return;
+  }
+
+  if (adminMsg) adminMsg.innerText = 'Anciens matchs archivés ✅ Recréation Brassage 1...';
+  const rows = generateBrassage1Rows();
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + ins.error.message;
+    alert('Erreur régénération Brassage 1 : ' + ins.error.message);
+    return;
+  }
+
+  await loadData();
+  try {
+    const phaseFilter = document.getElementById('phaseFilter');
+    if (phaseFilter) phaseFilter.value = 'Brassage 1';
+    renderPlanning();
+  } catch(e) {}
+  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul Brassage 1 est affiché.';
+};
+
+regenerateBrassage1 = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront archivés.')) return;
+  const upd = await client.from('matches').update({ phase: 'Archive', status: 'done', score_a: 0, score_b: 0, winner: null }).eq('phase', 'Brassage 1');
   if (upd.error) {
     document.getElementById('adminMsg').innerText = 'Erreur archivage Brassage 1 : ' + upd.error.message;
     return;
