@@ -3288,29 +3288,67 @@ resetScores = async function() {
   await loadData();
 };
 
-/* v17.3w - reset tournoi dur : suppression de tous les matchs puis régénération uniquement Brassage 1 */
+/* v17.3x - reset tournoi dur renforcé : purge vérifiée + cache bust */
+async function deleteAllMatchesHard_v173x(adminMsg) {
+  // 1) Tentative la plus fiable : supprimer par identifiants déjà chargés à l'écran.
+  const ids = [...new Set((matches || []).map(m => m.id).filter(id => id !== null && id !== undefined))];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    if (!chunk.length) continue;
+    const byId = await client.from('matches').delete().in('id', chunk);
+    if (byId.error) throw new Error('suppression par id : ' + byId.error.message);
+  }
+
+  // 2) Sécurité : supprimer aussi par phases connues, au cas où des lignes n'étaient pas chargées localement.
+  const phases = ['Brassage 1', 'Brassage 2', 'Tableau principal', 'Consolante'];
+  const byPhase = await client.from('matches').delete().in('phase', phases);
+  if (byPhase.error) throw new Error('suppression par phase : ' + byPhase.error.message);
+
+  // 3) Sécurité ultime : supprimer toute ligne restante avec un id non nul.
+  // Certains navigateurs avaient encore l'ancien script en cache, d'où ce reset renforcé et vérifié.
+  const byAnyId = await client.from('matches').delete().not('id', 'is', null);
+  if (byAnyId.error) throw new Error('suppression globale : ' + byAnyId.error.message);
+
+  // 4) Vérification réelle en base : si des lignes restent, on ne ment pas à l'utilisateur.
+  const check = await client.from('matches').select('id, phase, team_a, team_b').limit(5);
+  if (check.error) throw new Error('vérification après suppression : ' + check.error.message);
+  if (check.data && check.data.length) {
+    const sample = check.data.map(m => `#${m.id} ${m.phase || '-'} ${m.team_a || '?'} vs ${m.team_b || '?'}`).join(' / ');
+    throw new Error('des matchs restent en base après suppression : ' + sample);
+  }
+}
+
+function clearAllVolleyLocalStorage_v173x() {
+  try {
+    Object.keys(localStorage).forEach(function(k) {
+      if (k.indexOf('volley_') === 0 || k.indexOf('match_started_at_') === 0) localStorage.removeItem(k);
+    });
+  } catch(e) {}
+}
+
 resetScores = async function() {
   if (!adminUnlocked) return;
-  if (!confirm('Reset complet du tournoi ?\n\nCela supprime les matchs Brassage 2 / Tableaux / Consolante et régénère uniquement le Brassage 1 à partir des équipes.')) return;
+  if (!confirm('Reset complet DUR du tournoi ?\n\nCela supprime TOUS les matchs en base, purge les chronos/reprises, puis recrée uniquement le Brassage 1.')) return;
 
   const adminMsg = document.getElementById('adminMsg');
-  if (adminMsg) adminMsg.innerText = 'Reset complet en cours...';
+  if (adminMsg) adminMsg.innerText = 'Reset dur en cours : suppression des anciens matchs...';
 
-  // Nettoyage local : reprise, chrono, historique service, match actif.
   try {
     (matches || []).forEach(function(m) { clearMatchRuntimeLocalState(m.id); });
-    localStorage.removeItem(activeMatchStorageKey());
+    clearAllVolleyLocalStorage_v173x();
   } catch(e) {}
   activeScoreMatchId = null;
 
-  // Supprime tous les anciens matchs pour éviter les restes de Brassage 2 / Tableaux en base.
-  const del = await client.from('matches').delete().neq('id', 0);
-  if (del.error) {
-    if (adminMsg) adminMsg.innerText = 'Erreur suppression matchs : ' + del.error.message;
+  try {
+    await deleteAllMatchesHard_v173x(adminMsg);
+  } catch (e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message + '\n\nLes anciens matchs n’ont pas été supprimés, donc je ne recrée pas Brassage 1 par-dessus pour éviter les doublons.');
     return;
   }
 
-  // Recharge équipes/settings si besoin puis régénère seulement Brassage 1.
+  if (adminMsg) adminMsg.innerText = 'Anciens matchs supprimés ✅ Recréation Brassage 1...';
+
   const rows = generateBrassage1Rows();
   const ins = await client.from('matches').insert(rows);
   if (ins.error) {
@@ -3318,11 +3356,11 @@ resetScores = async function() {
     return;
   }
 
-  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul le Brassage 1 est recréé. Brassage 2 et tableaux supprimés.';
   await loadData();
   try {
     const phaseFilter = document.getElementById('phaseFilter');
     if (phaseFilter) phaseFilter.value = 'Brassage 1';
     renderPlanning();
   } catch(e) {}
+  if (adminMsg) adminMsg.innerText = 'Reset dur effectué ✅ Seul Brassage 1 existe maintenant.';
 };
