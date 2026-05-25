@@ -3287,3 +3287,42 @@ resetScores = async function() {
   document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ Anciens tableaux supprimés, Brassage 1/2 remis à 0-0.';
   await loadData();
 };
+
+/* v17.3w - reset tournoi dur : suppression de tous les matchs puis régénération uniquement Brassage 1 */
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nCela supprime les matchs Brassage 2 / Tableaux / Consolante et régénère uniquement le Brassage 1 à partir des équipes.')) return;
+
+  const adminMsg = document.getElementById('adminMsg');
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours...';
+
+  // Nettoyage local : reprise, chrono, historique service, match actif.
+  try {
+    (matches || []).forEach(function(m) { clearMatchRuntimeLocalState(m.id); });
+    localStorage.removeItem(activeMatchStorageKey());
+  } catch(e) {}
+  activeScoreMatchId = null;
+
+  // Supprime tous les anciens matchs pour éviter les restes de Brassage 2 / Tableaux en base.
+  const del = await client.from('matches').delete().neq('id', 0);
+  if (del.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur suppression matchs : ' + del.error.message;
+    return;
+  }
+
+  // Recharge équipes/settings si besoin puis régénère seulement Brassage 1.
+  const rows = generateBrassage1Rows();
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + ins.error.message;
+    return;
+  }
+
+  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul le Brassage 1 est recréé. Brassage 2 et tableaux supprimés.';
+  await loadData();
+  try {
+    const phaseFilter = document.getElementById('phaseFilter');
+    if (phaseFilter) phaseFilter.value = 'Brassage 1';
+    renderPlanning();
+  } catch(e) {}
+};
