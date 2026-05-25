@@ -3364,3 +3364,106 @@ resetScores = async function() {
   } catch(e) {}
   if (adminMsg) adminMsg.innerText = 'Reset dur effectué ✅ Seul Brassage 1 existe maintenant.';
 };
+
+/* v17.3y - reset compatible RLS : archivage logique si le DELETE Supabase est bloqué */
+function isArchivedMatch_v173y(m) {
+  return !m || m.phase === 'Archive' || m.phase === '__ARCHIVE__' || m.status === 'archived' || m.status === 'reset_archived';
+}
+
+function activeMatchesOnly_v173y(list) {
+  return (list || []).filter(function(m) { return !isArchivedMatch_v173y(m); });
+}
+
+// On surcharge le chargement pour ne jamais afficher les anciennes lignes archivées.
+loadData = async function() {
+  const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
+  if (se) alert('Erreur settings: ' + se.message);
+  settings = s;
+
+  const { data: t, error: te } = await client.from('teams').select('*').order('id');
+  if (te) alert('Erreur teams: ' + te.message);
+  teams = t || [];
+
+  const { data: m, error: me } = await client.from('matches').select('*').order('scheduled_time').order('court');
+  if (me) alert('Erreur matches: ' + me.message);
+  matches = activeMatchesOnly_v173y(m || []);
+
+  renderAll();
+  if (typeof ensureVisibleSection === 'function') ensureVisibleSection();
+};
+
+async function archiveAllMatchesForReset_v173y() {
+  // Le DELETE peut être silencieusement bloqué par les règles Supabase/RLS.
+  // L'UPDATE est autorisé dans ton appli : on archive donc les anciennes lignes et l'UI les ignore.
+  const upd = await client.from('matches').update({
+    phase: 'Archive',
+    status: 'done',
+    score_a: null,
+    score_b: null,
+    winner: null,
+    started_at: null,
+    completed_at: null
+  }).neq('id', 0);
+  if (upd.error) throw new Error('archivage des anciens matchs : ' + upd.error.message);
+
+  const check = await client.from('matches').select('id, phase, team_a, team_b').neq('phase', 'Archive').limit(5);
+  if (check.error) throw new Error('vérification archivage : ' + check.error.message);
+  if (check.data && check.data.length) {
+    const sample = check.data.map(m => `#${m.id} ${m.phase || '-'} ${m.team_a || '?'} vs ${m.team_b || '?'}`).join(' / ');
+    throw new Error('des matchs actifs restent visibles après archivage : ' + sample);
+  }
+}
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nLes anciens matchs seront archivés, les chronos/reprises purgés, puis Brassage 1 sera recréé seul.')) return;
+
+  const adminMsg = document.getElementById('adminMsg');
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours : archivage des anciens matchs...';
+
+  try {
+    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+  } catch(e) {}
+  activeScoreMatchId = null;
+
+  try {
+    await archiveAllMatchesForReset_v173y();
+  } catch (e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message + '\n\nJe ne recrée pas Brassage 1 par-dessus pour éviter les doublons.');
+    return;
+  }
+
+  if (adminMsg) adminMsg.innerText = 'Anciens matchs archivés ✅ Recréation Brassage 1...';
+  const rows = generateBrassage1Rows();
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + ins.error.message;
+    alert('Erreur régénération Brassage 1 : ' + ins.error.message);
+    return;
+  }
+
+  await loadData();
+  try {
+    const phaseFilter = document.getElementById('phaseFilter');
+    if (phaseFilter) phaseFilter.value = 'Brassage 1';
+    renderPlanning();
+  } catch(e) {}
+  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul Brassage 1 est affiché.';
+};
+
+// Même logique pour le bouton de régénération Brassage 1 : on archive l'ancien B1 au lieu de dépendre d'un DELETE.
+regenerateBrassage1 = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront archivés.')) return;
+  const upd = await client.from('matches').update({ phase: 'Archive', status: 'done', score_a: null, score_b: null, winner: null }).eq('phase', 'Brassage 1');
+  if (upd.error) {
+    document.getElementById('adminMsg').innerText = 'Erreur archivage Brassage 1 : ' + upd.error.message;
+    return;
+  }
+  const rows = generateBrassage1Rows();
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Brassage 1 régénéré ✅';
+  await loadData();
+};
