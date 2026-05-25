@@ -3559,3 +3559,127 @@ regenerateBrassage1 = async function() {
   document.getElementById('adminMsg').innerText = error ? error.message : 'Brassage 1 régénéré ✅';
   await loadData();
 };
+
+/* v18.1 - génération B2 après test B1 + timeline robuste */
+function phaseDone_v181(phase) {
+  const list = (matches || []).filter(m => m.phase === phase && m.team_a && m.team_b);
+  return list.length > 0 && list.every(m => m.status === 'done' && m.score_a !== null && m.score_b !== null);
+}
+
+function activePhaseRows_v181(phase) {
+  return (matches || []).filter(m => m.phase === phase && m.team_a && m.team_b);
+}
+
+currentPhaseName = function() {
+  const live = (matches || []).find(m => m.status === 'live' && m.team_a && m.team_b);
+  if (live) return live.phase || 'Phase en cours';
+
+  const pending = (matches || [])
+    .filter(m => m.status !== 'done' && m.team_a && m.team_b)
+    .sort(tournamentPlaySort || function(a,b) { return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || ''); });
+  if (pending.length) return pending[0].phase || 'Phase en cours';
+
+  // Cas important après le bouton de test : B1 est terminé mais B2 n'existe pas encore.
+  // On affiche alors l'étape suivante au lieu de "Tournoi terminé".
+  if (phaseDone_v181('Brassage 1') && activePhaseRows_v181('Brassage 2').length === 0) return 'Brassage 2';
+  if (phaseDone_v181('Brassage 2') && activePhaseRows_v181('Tableau principal').length === 0 && activePhaseRows_v181('Consolante').length === 0) return 'Tableaux';
+
+  return 'Tournoi terminé';
+};
+
+renderTimeline = function(phase) {
+  const phases = ['Brassage 1', 'Brassage 2', 'Tableaux'];
+  let activeIndex = phases.indexOf(phase);
+  if (phase === 'Tableau principal' || phase === 'Consolante') activeIndex = 2;
+  if (activeIndex < 0 && phase !== 'Tournoi terminé') activeIndex = 2;
+  if (phase === 'Tournoi terminé') activeIndex = phases.length;
+  return phases.map(function(p, index) {
+    const active = index === activeIndex;
+    const done = index < activeIndex;
+    const cls = 'timeline-step timeline-premium-step ' + (active ? 'active' : '') + (done ? ' done' : '');
+    return '<span class="' + cls + '"><span class="timeline-index">' + (index + 1) + '</span><span class="timeline-label">' + p + '</span></span>';
+  }).join('<span class="timeline-connector"></span>');
+};
+
+async function archivePhase_v181(phase) {
+  const upd = await client.from('matches').update({
+    phase: 'Archive',
+    status: 'done',
+    score_a: 0,
+    score_b: 0,
+    winner: null
+  }).eq('phase', phase);
+  if (upd.error) throw new Error('archivage ' + phase + ' : ' + upd.error.message);
+}
+
+async function generateBrassage2Silent_v181() {
+  const b1Matches = (matches || []).filter(m => m.phase === 'Brassage 1' && m.team_a && m.team_b);
+  if (b1Matches.length !== 36) throw new Error('il faut 36 matchs en Brassage 1, trouvés ' + b1Matches.length);
+  const unfinished = b1Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
+  if (unfinished.length) throw new Error(unfinished.length + ' match(s) de Brassage 1 ne sont pas terminés');
+
+  const rankings = {};
+  ['A','B','C','D','E','F'].forEach(function(pool) {
+    rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
+    if (rankings[pool].length !== 4) throw new Error('Poule ' + pool + ' invalide : ' + rankings[pool].length + ' équipes classées');
+  });
+
+  const b2Pools = [
+    { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
+    { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
+    { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
+    { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
+    { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
+    { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
+  ];
+
+  const startB2 = getBrassage2StartTime();
+  let rows = [];
+  b2Pools.forEach(function(p) {
+    const poolTeams = p.source.map(function(src) { return rankings[src[0]][src[1]-1].name; });
+    rows.push.apply(rows, generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
+  });
+  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
+
+  // DELETE peut être bloqué par RLS : on archive l'ancien B2 et l'UI ignore Archive.
+  await archivePhase_v181('Brassage 2');
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
+  return rows.length;
+}
+
+generateBrassage2 = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Générer le Brassage 2 ? Les matchs Brassage 2 existants seront archivés.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  try {
+    const count = await generateBrassage2Silent_v181();
+    if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
+    await loadData();
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
+    alert('Impossible de générer Brassage 2 : ' + e.message);
+  }
+};
+
+const fillRandomMissingResults_base_v181 = fillRandomMissingResults;
+fillRandomMissingResults = async function(phase) {
+  await fillRandomMissingResults_base_v181(phase);
+
+  // Après le bouton de test "Remplir B1", on enchaîne directement sur la génération B2
+  // pour éviter un dashboard vide / tournoi terminé.
+  if (phase === 'Brassage 1') {
+    await loadData();
+    const hasB2 = activePhaseRows_v181('Brassage 2').length > 0;
+    if (!hasB2 && phaseDone_v181('Brassage 1')) {
+      const adminMsg = document.getElementById('adminMsg');
+      try {
+        const count = await generateBrassage2Silent_v181();
+        if (adminMsg) adminMsg.innerText += ' Brassage 2 généré automatiquement ✅ (' + count + ' matchs).';
+        await loadData();
+      } catch(e) {
+        if (adminMsg) adminMsg.innerText += ' Génération B2 bloquée : ' + e.message;
+      }
+    }
+  }
+};
