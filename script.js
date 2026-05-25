@@ -3082,3 +3082,136 @@ resetScores = async function() {
   document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ Scores 0-0, statuts à jouer, chronos/reprises purgés.';
   await loadData();
 };
+
+/* v17.3u - reset revient au Brassage 1 + scoring points aussi pour les tableaux */
+function phasePlayOrderValue(m) {
+  const p = String(m && m.phase ? m.phase : '').toLowerCase();
+  if (p.includes('brassage 1')) return 1;
+  if (p.includes('brassage 2')) return 2;
+  if (p.includes('tableau principal')) return 3;
+  if (p.includes('consolante')) return 4;
+  if (p.includes('tableau')) return 3;
+  return 9;
+}
+
+function tournamentPlaySort(a, b) {
+  return phasePlayOrderValue(a) - phasePlayOrderValue(b) ||
+    (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+    Number(a.court || 0) - Number(b.court || 0) ||
+    (a.match_order || 0) - (b.match_order || 0) ||
+    Number(a.id || 0) - Number(b.id || 0);
+}
+
+nextPlayableMatches = function(limit = 6) {
+  return matches
+    .filter(isPlayableMatch)
+    .sort(tournamentPlaySort)
+    .slice(0, limit);
+};
+
+function renderPointScoreboard_v173u(m) {
+  const locked = !canEditMatch(m);
+  return `
+    <div class="scoreboard-full scoreboard-polish-k">
+      <div class="score-half team-a">
+        <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', 1)"`}>+</button>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', -1)"`}>−</button>
+      </div>
+
+      <div class="center-controls center-controls-k">
+        ${chronoHtml(m)}
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase || ''}${m.round ? ' · ' + m.round : ''}</div>
+        ${locked ? lockedMatchHtml(m) : `<button class="danger finish-btn finish-btn-k" onclick="finishMatch(${m.id})">Terminer le match</button>`}
+      </div>
+
+      <div class="score-half team-b">
+        <div class="team-title">${m.team_b}${serviceBall(m, 'b')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', 1)"`}>+</button>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', -1)"`}>−</button>
+      </div>
+    </div>
+  `;
+}
+
+const renderMatchScoreboardBase_v173u = renderMatchScoreboard;
+renderMatchScoreboard = function(m) {
+  if (m && isBracketMatch(m) && !isDoneMatch(m)) {
+    if (isLiveMatchStatus(m)) ensureMatchChronoStarted(m);
+    const html = renderPointScoreboard_v173u(m);
+    setTimeout(function(){ updateChronoDisplays(); maybeWarnChronoEnded(m); }, 50);
+    return html;
+  }
+  return renderMatchScoreboardBase_v173u(m);
+};
+
+async function propagateBracketResult_v173u(m, winner, loser) {
+  if (!m || !isBracketMatch(m)) return;
+
+  if (m.next_match_order) {
+    const next = matches.find(x => String(x.bracket) === String(m.bracket) && Number(x.match_order) === Number(m.next_match_order));
+    if (next) {
+      const payload = {};
+      if (m.next_slot === 'A') payload.team_a = winner;
+      if (m.next_slot === 'B') payload.team_b = winner;
+      if (Object.keys(payload).length) await client.from('matches').update(payload).eq('id', next.id);
+    }
+  }
+
+  if (m.loser_next_match_order) {
+    const nextLoser = matches.find(x => String(x.bracket) === String(m.bracket) && Number(x.match_order) === Number(m.loser_next_match_order));
+    if (nextLoser) {
+      const payload = {};
+      if (m.loser_next_slot === 'A') payload.team_a = loser;
+      if (m.loser_next_slot === 'B') payload.team_b = loser;
+      if (Object.keys(payload).length) await client.from('matches').update(payload).eq('id', nextLoser.id);
+    }
+  }
+}
+
+finishMatch = async function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+
+  const invalid = validateFinalScore(m);
+  if (invalid) {
+    alert(invalid);
+    return;
+  }
+
+  const a = Number(m.score_a == null ? 0 : m.score_a);
+  const b = Number(m.score_b == null ? 0 : m.score_b);
+  if (!confirm(`Confirmer le score ?\n${m.team_a}: ${a}\n${m.team_b}: ${b}`)) return;
+
+  const winner = a > b ? m.team_a : m.team_b;
+  const loser = a > b ? m.team_b : m.team_a;
+  const completedAt = new Date().toISOString();
+  const payloadDone = { status: 'done', winner: winner, completed_at: completedAt };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(codeForMatch(m));
+    if (refTeam) payloadDone.referee_team = refTeam;
+  }
+
+  let result = await client.from('matches').update(payloadDone).eq('id', id);
+  if (result.error) {
+    const fallback = { status: 'done', winner: winner };
+    if (payloadDone.referee_team) fallback.referee_team = payloadDone.referee_team;
+    result = await client.from('matches').update(fallback).eq('id', id);
+  }
+  if (result.error) {
+    alert('Erreur fin de match : ' + result.error.message);
+    return;
+  }
+
+  await propagateBracketResult_v173u(m, winner, loser);
+  saveLocalCompletedTime(id, completedAt);
+  delete matchEditCodes[id];
+  clearLocalMatchSession(id);
+  clearStartedAtEverywhere(id);
+  if (String(activeScoreMatchId) === String(id)) activeScoreMatchId = null;
+
+  await loadData();
+  proposeNextMatchAfterFinish(m);
+};
