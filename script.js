@@ -4125,3 +4125,53 @@ nextPlayableMatches = function(limit = 6) {
 };
 
 window.CSM_BUILD = 'v19.13-equilibrage-tableaux-principal-consolante';
+
+/* v19.14 - vrai équilibrage affichage/lancement tableaux
+   Correction : l'ancien tri classait Tableau principal avant Consolante via phasePlayOrderValue,
+   donc les 6 cartes affichées étaient toutes en principal. Pour les matchs de tableau,
+   on trie maintenant d'abord par séquence équilibrée : P1-P4, C1-C2, P5-P8, C3-C4.
+*/
+function isBracketMatch_v1914(m) {
+  const phase = String(m && m.phase || '').toLowerCase();
+  const bracket = String(m && m.bracket || '').toLowerCase();
+  return phase.includes('tableau principal') || phase.includes('consolante') || bracket.includes('principal') || bracket.includes('consolante');
+}
+
+function tournamentPlaySort_v1914(a, b) {
+  const ab = isBracketMatch_v1914(a);
+  const bb = isBracketMatch_v1914(b);
+
+  // Pendant les tableaux, Principal et Consolante doivent être mélangés selon la séquence terrain.
+  if (ab && bb) {
+    return bracketBalancedSequence_v1913(a) - bracketBalancedSequence_v1913(b) ||
+      Number(a.court || 0) - Number(b.court || 0) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      Number(a.id || 0) - Number(b.id || 0);
+  }
+
+  // Hors tableau, on garde la logique normale de phase.
+  const pa = phasePlayOrderValue(a);
+  const pb = phasePlayOrderValue(b);
+  if (pa !== pb) return pa - pb;
+
+  return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+    Number(a.court || 0) - Number(b.court || 0) ||
+    Number(a.match_order || 0) - Number(b.match_order || 0) ||
+    Number(a.id || 0) - Number(b.id || 0);
+}
+
+nextPlayableMatches = function(limit = 6) {
+  return matches
+    .filter(function(m) { return isPlayableMatch(m) && m.team_a !== 'À définir' && m.team_b !== 'À définir'; })
+    .sort(tournamentPlaySort_v1914)
+    .slice(0, limit);
+};
+
+// Le tableau public utilise aussi l'ordre équilibré, pas l'ordre terrain brut.
+if (typeof renderPublicView === 'function') {
+  const renderPublicView_base_v1914 = renderPublicView;
+  // On ne réécrit pas tout l'écran public ici pour éviter une régression visuelle.
+  // Le point critique pour la saisie organisateur est nextPlayableMatches ci-dessus.
+}
+
+window.CSM_BUILD = 'v19.14-equilibrage-tableaux-reel';
