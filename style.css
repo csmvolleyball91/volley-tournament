@@ -2480,3 +2480,100 @@ body {
 .center-controls .locked-match {
   pointer-events: auto;
 }
+
+/* v19.6 - Responsive smartphone : écran de saisie score lisible */
+@media (max-width: 640px) {
+  .score-screen {
+    padding: 0 !important;
+  }
+
+  .scoreboard-full {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: auto !important;
+    height: auto !important;
+    border-radius: 18px !important;
+    overflow: visible !important;
+    gap: 10px !important;
+    background: #f4f7ff !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .score-half {
+    width: 100% !important;
+    min-height: 330px !important;
+    border-radius: 22px !important;
+    padding: 18px 12px 20px !important;
+    justify-content: space-between !important;
+    box-shadow: 0 12px 28px rgba(0, 61, 136, .16) !important;
+  }
+
+  .score-half.team-a { order: 1; }
+  .center-controls { order: 2; }
+  .score-half.team-b { order: 3; }
+
+  .center-controls {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    padding: 8px 4px !important;
+    z-index: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .team-title {
+    font-size: clamp(34px, 13vw, 54px) !important;
+    line-height: .95 !important;
+    margin: 0 !important;
+    max-width: 96% !important;
+    word-break: break-word !important;
+  }
+
+  .mega-score {
+    font-size: clamp(92px, 32vw, 150px) !important;
+    line-height: .85 !important;
+    margin: 4px 0 !important;
+  }
+
+  .score-action {
+    width: min(42vw, 150px) !important;
+    height: min(42vw, 150px) !important;
+    min-width: 112px !important;
+    min-height: 112px !important;
+    border-radius: 28px !important;
+    font-size: clamp(64px, 20vw, 104px) !important;
+    line-height: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    touch-action: manipulation !important;
+  }
+
+  .bottom-action {
+    width: min(34vw, 128px) !important;
+    height: min(24vw, 92px) !important;
+    min-width: 100px !important;
+    min-height: 68px !important;
+    font-size: clamp(54px, 16vw, 82px) !important;
+    border-radius: 22px !important;
+  }
+
+  .mini-meta {
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+  }
+
+  .finish-btn {
+    min-width: 120px !important;
+    padding: 10px 14px !important;
+    font-size: 14px !important;
+  }
+}
