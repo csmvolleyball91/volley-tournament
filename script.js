@@ -212,7 +212,6 @@ function ensureVisibleSection() {
 }
 
 function show(id) {
-  if (id !== 'score') document.body.classList.remove('score-live-active');
   document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('hidden');
@@ -777,12 +776,10 @@ function renderScoreSection() {
   if (!div || !listDiv) return;
 
   const active = activeScoreMatchId ? matches.find(m => m.id === activeScoreMatchId && m.status !== 'done') : null;
-  document.body.classList.toggle('score-live-active', !!active);
   const resumeList = resumeMatchesForDisplay();
   if (active) {
-    div.innerHTML = renderMatchScoreboard(active);
-    listDiv.innerHTML = '';
-    return;
+    const others = resumeList.filter(function(x) { return String(x.id) !== String(active.id); });
+    div.innerHTML = renderMatchScoreboard(active) + renderResumeMatchesCard(others);
   } else {
     div.innerHTML = resumeList.length
       ? renderResumeMatchesCard(resumeList)
@@ -3878,3 +3875,6 @@ setTimeout(function(){
     }
   } catch(e) {}
 }, 2200);
+
+/* v19.8 - compact responsive score UI */
+window.CSM_BUILD = 'v19.8-compact-score-responsive-2026-05-27';
