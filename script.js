@@ -412,7 +412,7 @@ function currentPhaseInfo() {
   return {
     phase: m.phase || '-',
     startLabel: start.label,
-    endLabel: addMinutes(start.time, Number(settings.match_duration || 12))
+    endLabel: estimatedPhaseEnd(m.phase)
   };
 }
 
@@ -4215,3 +4215,45 @@ if (typeof renderPublicView === 'function') {
 }
 
 window.CSM_BUILD = 'v19.15-equilibrage-tableaux-reel';
+
+/* v19.16 - correction uniquement header live : la fin estimée du bandeau doit utiliser l'estimation dynamique réelle, pas l'heure théorique du premier créneau. */
+function headerEstimatedPhaseEndMinutes_v1916(phase) {
+  if (!phase || phase === 'Tournoi terminé') return null;
+  const list = matches.filter(function(m) { return m.phase === phase && m.team_a && m.team_b; });
+  if (!list.length) return null;
+
+  const remaining = list.filter(function(m) { return m.status !== 'done'; });
+  if (!remaining.length) return (typeof plannedPhaseEndMinutes === 'function') ? plannedPhaseEndMinutes(phase) : null;
+
+  const live = remaining.filter(function(m) { return m.status === 'live'; });
+  const pending = remaining.filter(function(m) { return m.status !== 'live'; });
+  const courts = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
+  const slot = Number(settings && settings.match_duration ? settings.match_duration : 12) + Number(settings && settings.break_duration ? settings.break_duration : 0);
+  const pause = (typeof getTournamentPauseMinutes === 'function') ? getTournamentPauseMinutes() : 0;
+  const waves = (live.length ? 1 : 0) + Math.ceil(pending.length / courts);
+  const dynamicEnd = nowMinutesOfDay() + Math.max(1, waves) * slot + pause;
+  const plannedEnd = (typeof plannedPhaseEndMinutes === 'function') ? plannedPhaseEndMinutes(phase) : null;
+  return plannedEnd == null ? dynamicEnd : Math.max(plannedEnd, dynamicEnd);
+}
+
+function headerEstimatedPhaseEnd_v1916(phase) {
+  const end = headerEstimatedPhaseEndMinutes_v1916(phase);
+  return end == null ? '-' : timeFromMinutesOfDay(end);
+}
+
+renderSubtitle = function() {
+  if (!settings) return;
+  const el = document.getElementById('subtitle');
+  if (!el) return;
+  const phase = currentPhaseName();
+  if (!phase || phase === 'Tournoi terminé') {
+    el.innerHTML = 'Phase en cours : aucun match à venir<br>' + settings.teams_count + ' équipes · ' + settings.courts_count + ' terrains';
+    return;
+  }
+  const startLabel = (settings && settings.start_time) ? settings.start_time : '09:30';
+  const endLabel = headerEstimatedPhaseEnd_v1916(phase);
+  el.innerHTML = 'Phase en cours : ' + phase + ' · début ' + startLabel + ' théorique · fin estimée ' + endLabel + '<br>' +
+    settings.teams_count + ' équipes · ' + settings.courts_count + ' terrains';
+};
+
+window.CSM_BUILD = 'v19.16-header-fin-estimee-dynamique';
