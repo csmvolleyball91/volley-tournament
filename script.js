@@ -4257,3 +4257,38 @@ renderSubtitle = function() {
 };
 
 window.CSM_BUILD = 'v19.16-header-fin-estimee-dynamique';
+
+/* v19.17 - FIX CIBLÉ HEADER : force le bandeau bleu à utiliser la même estimation dynamique que la carte dashboard.
+   Objectif : supprimer définitivement l'ancien calcul théorique qui affichait 09:42. */
+function renderSubtitle_v1917_forced() {
+  if (!settings) return;
+  const el = document.getElementById('subtitle');
+  if (!el) return;
+  const phase = (typeof currentPhaseName === 'function') ? currentPhaseName() : '';
+  if (!phase || phase === 'Tournoi terminé') {
+    el.innerHTML = 'Phase en cours : aucun match à venir<br>' +
+      (settings.teams_count || '-') + ' équipes · ' + (settings.courts_count || '-') + ' terrains';
+    return;
+  }
+  const startLabel = (settings && settings.start_time) ? settings.start_time : '09:30';
+  // IMPORTANT : même source que la carte "Fin estimée phase".
+  const endLabel = (typeof estimatedPhaseEnd === 'function') ? estimatedPhaseEnd(phase) : '-';
+  el.innerHTML = 'Phase en cours : ' + phase + ' · début ' + startLabel + ' théorique · fin estimée ' + endLabel + '<br>' +
+    (settings.teams_count || '-') + ' équipes · ' + (settings.courts_count || '-') + ' terrains';
+}
+
+renderSubtitle = renderSubtitle_v1917_forced;
+
+if (typeof renderAll === 'function') {
+  const renderAll_base_v1917 = renderAll;
+  renderAll = function() {
+    renderAll_base_v1917();
+    renderSubtitle_v1917_forced();
+  };
+}
+
+// Corrige aussi l'affichage déjà rendu sans attendre une action utilisateur.
+setTimeout(renderSubtitle_v1917_forced, 100);
+setTimeout(renderSubtitle_v1917_forced, 800);
+setInterval(renderSubtitle_v1917_forced, 30000);
+window.CSM_BUILD = 'v19.17-header-fin-estimee-forcee';
