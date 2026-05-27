@@ -3839,3 +3839,39 @@ setTimeout(function(){
     }
   } catch(e) {}
 }, 1800);
+
+/* v19.3 - reset via RPC reset_tournament_matches() créée dans Supabase */
+window.CSM_BUILD = 'v19.3-rpc-reset-tournament-matches-2026-05-27';
+
+async function rpcResetTournamentMatches_v193() {
+  const res = await client.rpc('reset_tournament_matches');
+  if (res.error) throw new Error('RPC reset_tournament_matches : ' + res.error.message);
+  return res.data || 0;
+}
+
+hardDeleteEveryMatch_v191 = async function() {
+  await rpcResetTournamentMatches_v193();
+  const check = await client.from('matches').select('id,phase', { count: 'exact', head: false });
+  if (check.error) throw new Error('vérification après suppression : ' + check.error.message);
+  if ((check.data || []).length > 0) {
+    const phases = Array.from(new Set((check.data || []).map(function(m){ return m.phase || '-'; })));
+    throw new Error('suppression bloquée : il reste encore ' + (check.data || []).length + ' match(s) en base pour ' + phases.join(', '));
+  }
+};
+
+// Nettoyage de phase : on garde un DELETE client simple pour éviter de dépendre d'une 2e fonction SQL.
+// Le reset complet, lui, passe bien par la RPC SECURITY DEFINER ci-dessus.
+cleanPhase_v191 = async function(phases) {
+  const list = Array.isArray(phases) ? phases : [phases];
+  const del = await client.from('matches').delete().in('phase', list);
+  if (del.error) throw new Error('suppression phase ' + list.join('/') + ' : ' + del.error.message);
+};
+
+setTimeout(function(){
+  try {
+    const adminMsg = document.getElementById('adminMsg');
+    if (adminMsg && (!adminMsg.innerText || adminMsg.innerText.indexOf('Build') === 0)) {
+      adminMsg.innerText = 'Build ' + window.CSM_BUILD + ' chargé.';
+    }
+  } catch(e) {}
+}, 2200);
