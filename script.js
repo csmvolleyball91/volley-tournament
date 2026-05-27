@@ -1818,6 +1818,7 @@ function renderBrackets() {
 
   const bracketMatches = matches.filter(m => m.bracket).sort((a,b) =>
     (a.bracket || '').localeCompare(b.bracket || '') ||
+    bracketRoundOrder(a.round) - bracketRoundOrder(b.round) ||
     (a.match_order || 0) - (b.match_order || 0)
   );
 
@@ -1826,98 +1827,56 @@ function renderBrackets() {
     return;
   }
 
-  const groups = {};
-  bracketMatches.forEach(m => {
-    const key = `${m.bracket} — ${m.round}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(m);
-  });
-
-  bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
-    <div class="bracket-title">${title}</div>
-    ${list.map(m => `<div class="card">
-      <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${computedScheduledTime(m) || 'Horaire à définir'}</span><br>
-      <b>${m.team_a || 'À définir'}</b> vs <b>${m.team_b || 'À définir'}</b><br>
-      Gagnant : ${m.winner || '-'} · ${statusText(m)}
-    </div>`).join('')}
-  `).join('');
+  bracketDiv.innerHTML = `<section class="bracket-table-card">
+    <div class="ranking-phase-title bracket-table-head">
+      <span>Vue tableau des matchs</span>
+      <small>${bracketMatches.length} matchs générés · lecture organisateur</small>
+    </div>
+    <div class="table-scroll"><table class="ranking-table bracket-match-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Tableau</th>
+          <th>Tour</th>
+          <th>Horaire</th>
+          <th>Terrain</th>
+          <th>Équipe A</th>
+          <th>Score</th>
+          <th>Équipe B</th>
+          <th>Gagnant</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${bracketMatches.map(m => {
+          const score = (m.score_a != null && m.score_b != null) ? `${m.score_a} - ${m.score_b}` : '-';
+          const status = statusText(m);
+          return `<tr class="${isDoneMatch(m) ? 'match-row-done' : ''}">
+            <td><span class="rank-badge">${m.match_order || '-'}</span></td>
+            <td><b>${m.bracket || '-'}</b></td>
+            <td>${m.round || '-'}</td>
+            <td>${computedScheduledTime(m) || '-'}</td>
+            <td>${m.court || '-'}</td>
+            <td class="team-cell"><b>${m.team_a || 'À définir'}</b></td>
+            <td class="score-cell">${score}</td>
+            <td class="team-cell"><b>${m.team_b || 'À définir'}</b></td>
+            <td>${m.winner || '-'}</td>
+            <td>${status}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>
+  </section>`;
 }
 
-function bracketRowsFromRanking(ranking) {
-  // Génération tableaux fiabilisée : aucun match ne part sans terrain.
-  // Classement utilisé : B2 en priorité, B1 en tie-break (fait dans globalRanking()).
-  const rows = [];
-  const courtsCount = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
-  const courtFor = function(order) { return ((Number(order || 1) - 1) % courtsCount) + 1; };
-  const seedName = function(seedIndex) {
-    return ranking[seedIndex - 1] && ranking[seedIndex - 1].name ? ranking[seedIndex - 1].name : 'À définir';
-  };
-  const safeRow = function(row) {
-    const order = Number(row.match_order || rows.length + 1);
-    return Object.assign({
-      court: courtFor(order),
-      scheduled_time: null,
-      status: 'pending',
-      referee_team: null,
-      access_code: null
-    }, row, {
-      court: Number(row.court || courtFor(order)) || 1
-    });
-  };
-
-  const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
-  mainPairs.forEach(function(p, idx) {
-    rows.push(safeRow({
-      phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order: idx + 1,
-      team_a: seedName(p[0]), team_b: seedName(p[1]),
-      next_match_order: 9 + Math.floor(idx / 2), next_slot: idx % 2 === 0 ? 'A' : 'B'
-    }));
-  });
-
-  for (let i = 0; i < 4; i++) rows.push(safeRow({
-    phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order: 9 + i,
-    team_a:'À définir', team_b:'À définir',
-    next_match_order: 13 + Math.floor(i / 2), next_slot: i % 2 === 0 ? 'A' : 'B'
-  }));
-
-  for (let i = 0; i < 2; i++) rows.push(safeRow({
-    phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order: 13 + i,
-    team_a:'À définir', team_b:'À définir',
-    next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
-    loser_next_match_order: 16, loser_next_slot: i === 0 ? 'A' : 'B'
-  }));
-
-  rows.push(safeRow({
-    phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order: 15,
-    team_a:'À définir', team_b:'À définir'
-  }));
-
-  rows.push(safeRow({
-    phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order: 16,
-    team_a:'À définir', team_b:'À définir'
-  }));
-
-  const consPairs = [[17,24],[20,21],[19,22],[18,23]];
-  consPairs.forEach(function(p, idx) {
-    rows.push(safeRow({
-      phase:'Consolante', bracket:'Consolante', round:'Quart', match_order: 101 + idx,
-      team_a: seedName(p[0]), team_b: seedName(p[1]),
-      next_match_order: 105 + Math.floor(idx / 2), next_slot: idx % 2 === 0 ? 'A' : 'B'
-    }));
-  });
-
-  for (let i = 0; i < 2; i++) rows.push(safeRow({
-    phase:'Consolante', bracket:'Consolante', round:'Demi', match_order: 105 + i,
-    team_a:'À définir', team_b:'À définir',
-    next_match_order: 107, next_slot: i === 0 ? 'A' : 'B'
-  }));
-
-  rows.push(safeRow({
-    phase:'Consolante', bracket:'Consolante', round:'Finale', match_order: 107,
-    team_a:'À définir', team_b:'À définir'
-  }));
-
-  return rows;
+function bracketRoundOrder(round) {
+  const r = String(round || '').toLowerCase();
+  if (r.includes('1/8')) return 1;
+  if (r.includes('quart')) return 2;
+  if (r.includes('demi')) return 3;
+  if (r.includes('3e') || r.includes('petite')) return 4;
+  if (r.includes('finale')) return 5;
+  return 99;
 }
 
 async function generateBrackets() {
