@@ -2444,3 +2444,39 @@ body {
     font-size: clamp(76px, 20vw, 125px) !important;
   }
 }
+
+/* v19.5 - Correction zone cliquable score : toute la zone verte/rouge est active */
+.scoreboard-full,
+.score-half {
+  position: relative;
+}
+.score-action {
+  position: relative !important;
+  z-index: 30 !important;
+  box-sizing: border-box !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+}
+.score-action::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.mega-score,
+.team-title {
+  position: relative;
+  z-index: 1;
+}
+.center-controls {
+  z-index: 10;
+  pointer-events: none;
+}
+.center-controls button,
+.center-controls .mini-meta,
+.center-controls .finish-btn,
+.center-controls .locked-match {
+  pointer-events: auto;
+}
