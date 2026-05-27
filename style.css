@@ -2400,3 +2400,47 @@ body {
   background: #fee2e2;
   color: #991b1b;
 }
+
+/* v19.4 - Score input buttons: larger touch area + visible symbol */
+.score-action {
+  width: clamp(150px, 18vw, 240px) !important;
+  height: clamp(150px, 18vw, 240px) !important;
+  min-width: 150px !important;
+  min-height: 150px !important;
+  border-radius: 26px !important;
+  background: #0aa366 !important;
+  color: #ffffff !important;
+  font-size: clamp(88px, 11vw, 150px) !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: none !important;
+  cursor: pointer;
+  box-shadow: 0 16px 30px rgba(0,0,0,.18) !important;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.score-action:hover {
+  background: #078d58 !important;
+  color: #ffffff !important;
+}
+.score-action:active {
+  transform: scale(.97);
+}
+.score-action:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .score-action {
+    width: clamp(120px, 28vw, 190px) !important;
+    height: clamp(120px, 28vw, 190px) !important;
+    min-width: 120px !important;
+    min-height: 120px !important;
+    font-size: clamp(76px, 20vw, 125px) !important;
+  }
+}
