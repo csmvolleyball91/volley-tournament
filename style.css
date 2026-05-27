@@ -2832,3 +2832,92 @@ body {
     max-width: clamp(74px, 14vw, 110px) !important;
   }
 }
+
+/* v19.10 - Mobile score clean-up: centered controls, fixed service slot, no empty vertical gaps */
+.scoreboard-full.scoreboard-polish-k .team-title {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-wrap: nowrap !important;
+  text-align: center !important;
+}
+.scoreboard-full.scoreboard-polish-k .service-ball,
+.scoreboard-full.scoreboard-polish-k .service-ball-placeholder {
+  flex: 0 0 auto !important;
+}
+.scoreboard-full.scoreboard-polish-k .service-ball-placeholder {
+  visibility: hidden !important;
+}
+.scoreboard-full.scoreboard-polish-k .center-controls,
+.scoreboard-full.scoreboard-polish-k .center-controls-k {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}
+.scoreboard-full.scoreboard-polish-k .mini-meta,
+.scoreboard-full.scoreboard-polish-k .match-chrono,
+.scoreboard-full.scoreboard-polish-k .finish-btn,
+.scoreboard-full.scoreboard-polish-k .finish-btn-k {
+  box-sizing: border-box !important;
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+.scoreboard-full.scoreboard-polish-k .match-chrono {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.scoreboard-full.scoreboard-polish-k .mini-meta {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+.scoreboard-full.scoreboard-polish-k .finish-btn-k {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .scoreboard-full.scoreboard-polish-k {
+    min-height: calc(100svh - 8px) !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .score-half {
+    justify-content: center !important;
+    gap: clamp(8px, 2.4svh, 18px) !important;
+    padding-top: clamp(8px, 2svh, 18px) !important;
+    padding-bottom: clamp(8px, 2svh, 18px) !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .center-controls,
+  .scoreboard-full.scoreboard-polish-k .center-controls-k {
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: clamp(82px, 24vw, 104px) !important;
+    max-width: clamp(82px, 24vw, 104px) !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .team-title {
+    min-height: 2.2em !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .service-ball,
+  .scoreboard-full.scoreboard-polish-k .service-ball-placeholder {
+    width: 18px !important;
+    height: 18px !important;
+    font-size: 13px !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .scoreboard-full.scoreboard-polish-k .center-controls,
+  .scoreboard-full.scoreboard-polish-k .center-controls-k {
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+}

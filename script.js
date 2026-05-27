@@ -3878,3 +3878,15 @@ setTimeout(function(){
 
 /* v19.8 - compact responsive score UI */
 window.CSM_BUILD = 'v19.8-compact-score-responsive-2026-05-27';
+
+/* v19.10 - Service indicator with fixed reserved slot to prevent score/layout jumps */
+const serviceBall_v1910_previous = serviceBall;
+serviceBall = function(m, side) {
+  const total = (m.score_a == null ? 0 : Number(m.score_a)) + (m.score_b == null ? 0 : Number(m.score_b));
+  const isServing = total > 0 && servingSide(m) === side;
+  return isServing
+    ? '<span class="service-ball" title="Au service">🏐</span>'
+    : '<span class="service-ball service-ball-placeholder" aria-hidden="true">🏐</span>';
+};
+
+window.CSM_BUILD = 'v19.10-mobile-score-clean';
