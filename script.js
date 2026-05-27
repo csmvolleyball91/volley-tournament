@@ -4034,3 +4034,94 @@ nextPlayableMatches = function(limit = 6) {
 };
 
 window.CSM_BUILD = 'v19.12-no-chrono-tableaux-mix-principal-consolante';
+
+/* v19.13 - équilibrage tableaux 16 principal + 8 consolante
+   Objectif lancement initial sur 6 terrains : T1-T4 Principal 1-4, T5-T6 Consolante 1-2.
+   Vague suivante : T1-T4 Principal 5-8, T5-T6 Consolante 3-4.
+*/
+function bracketBalancedSequence_v1913(m) {
+  const bracket = String(m && m.bracket || '').toLowerCase();
+  const phase = String(m && m.phase || '').toLowerCase();
+  const round = String(m && m.round || '').toLowerCase();
+  const order = Number(m && m.match_order || 0);
+  const isCons = bracket.includes('consolante') || phase.includes('consolante');
+  const isMain = bracket.includes('principal') || phase.includes('tableau principal');
+
+  // Vague 1 : 4 principaux + 2 consolantes
+  if (isMain && round.includes('1/8') && order >= 1 && order <= 4) return 300 + (order - 1);
+  if (isCons && round.includes('quart') && order >= 101 && order <= 102) return 304 + (order - 101);
+
+  // Vague 2 : 4 principaux + 2 consolantes
+  if (isMain && round.includes('1/8') && order >= 5 && order <= 8) return 306 + (order - 5);
+  if (isCons && round.includes('quart') && order >= 103 && order <= 104) return 310 + (order - 103);
+
+  // Ensuite on alterne dès que les équipes sont connues
+  if (isMain && round.includes('quart')) return 400 + (order - 9);
+  if (isCons && round.includes('demi')) return 404 + (order - 105);
+  if (isMain && round.includes('demi')) return 500 + (order - 13);
+  if (isCons && round.includes('finale')) return 502;
+  if (isMain && (round.includes('3e') || round.includes('place'))) return 600;
+  if (isMain && round.includes('finale')) return 601;
+  return 900 + order;
+}
+
+function balancedCourtForBracket_v1913(row) {
+  const bracket = String(row && row.bracket || '').toLowerCase();
+  const phase = String(row && row.phase || '').toLowerCase();
+  const round = String(row && row.round || '').toLowerCase();
+  const order = Number(row && row.match_order || 0);
+  const isCons = bracket.includes('consolante') || phase.includes('consolante');
+  const isMain = bracket.includes('principal') || phase.includes('tableau principal');
+
+  // 1/8 principal : P1-P4 sur T1-T4, puis P5-P8 sur T1-T4 vague suivante
+  if (isMain && round.includes('1/8')) {
+    if (order >= 1 && order <= 4) return order;
+    if (order >= 5 && order <= 8) return order - 4;
+  }
+  // Consolante quarts : C1-C2 sur T5-T6, puis C3-C4 sur T5-T6 vague suivante
+  if (isCons && round.includes('quart')) {
+    if (order === 101) return 5;
+    if (order === 102) return 6;
+    if (order === 103) return 5;
+    if (order === 104) return 6;
+  }
+  // Tours suivants : on répartit proprement sans saturer un seul terrain
+  if (isMain && round.includes('quart')) return ((order - 9) % 4) + 1;
+  if (isCons && round.includes('demi')) return order === 105 ? 5 : 6;
+  if (isMain && round.includes('demi')) return order === 13 ? 1 : 2;
+  if (isCons && round.includes('finale')) return 5;
+  if (isMain && (round.includes('3e') || round.includes('place'))) return 3;
+  if (isMain && round.includes('finale')) return 1;
+  return Number(row && row.court || 1) || 1;
+}
+
+const bracketRowsFromRanking_base_v1913 = bracketRowsFromRanking;
+bracketRowsFromRanking = function(ranking) {
+  return bracketRowsFromRanking_base_v1913(ranking).map(function(row) {
+    return Object.assign({}, row, { court: balancedCourtForBracket_v1913(row) });
+  });
+};
+
+function tournamentPlaySort_v1913(a, b) {
+  const pa = phasePlayOrderValue(a);
+  const pb = phasePlayOrderValue(b);
+  if (pa !== pb) return pa - pb;
+  if (isBracketMatch(a) || isBracketMatch(b)) {
+    return bracketBalancedSequence_v1913(a) - bracketBalancedSequence_v1913(b) ||
+      Number(a.court || 0) - Number(b.court || 0) ||
+      Number(a.id || 0) - Number(b.id || 0);
+  }
+  return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+    Number(a.court || 0) - Number(b.court || 0) ||
+    Number(a.match_order || 0) - Number(b.match_order || 0) ||
+    Number(a.id || 0) - Number(b.id || 0);
+}
+
+nextPlayableMatches = function(limit = 6) {
+  return matches
+    .filter(function(m) { return isPlayableMatch(m) && m.team_a !== 'À définir' && m.team_b !== 'À définir'; })
+    .sort(tournamentPlaySort_v1913)
+    .slice(0, limit);
+};
+
+window.CSM_BUILD = 'v19.13-equilibrage-tableaux-principal-consolante';
