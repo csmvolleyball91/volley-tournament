@@ -2139,15 +2139,26 @@ function publicBracketCard(m, typeClass) {
 }
 
 function renderPublicBracketScreen(clock, phase, phaseEtaLabel) {
-  const principal = matches.filter(function(m) { return m.bracket === 'Principal' || m.phase === 'Tableau principal'; });
-  const consolation = matches.filter(function(m) { return m.bracket === 'Consolante' || m.phase === 'Consolante'; });
+  // Important : l'app archive les anciens matchs lors d'un reset complet.
+  // On ne doit JAMAIS les reprendre dans l'écran public, même s'ils gardent bracket='Principal'.
+  const activeList = activeMatchesOnly_v173y ? activeMatchesOnly_v173y(matches || []) : (matches || []).filter(function(m) {
+    return m && m.phase !== 'Archive' && m.phase !== '__ARCHIVE__' && m.status !== 'archived' && m.status !== 'reset_archived';
+  });
+
+  const principal = activeList.filter(function(m) {
+    return m.phase === 'Tableau principal' && m.bracket === 'Principal' && Number(m.match_order || 0) >= 1 && Number(m.match_order || 0) <= 16;
+  });
+  const consolation = activeList.filter(function(m) { return m.phase === 'Consolante' && m.bracket === 'Consolante'; });
   if (!principal.length && !consolation.length) return '';
 
   function byOrder(a,b) { return Number(a.match_order || 0) - Number(b.match_order || 0); }
   function find(order) { return principal.find(function(m) { return Number(m.match_order) === Number(order); }); }
-  const r16 = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('1/8'); }).sort(byOrder);
-  const quarters = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('quart'); }).sort(byOrder);
-  const semis = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('demi'); }).sort(byOrder);
+
+  // Format attendu : 16 équipes = 8 matchs en 1/8, 4 quarts, 2 demies, 1 finale, 1 petite finale.
+  // On borne chaque colonne pour éviter les doublons historiques/archivés ou régénérations multiples.
+  const r16 = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('1/8'); }).sort(byOrder).slice(0, 8);
+  const quarters = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('quart'); }).sort(byOrder).slice(0, 4);
+  const semis = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('demi'); }).sort(byOrder).slice(0, 2);
   const finalMatch = find(15) || principal.find(function(m) { return String(m.round || '').toLowerCase().includes('finale') && !String(m.round || '').includes('3'); });
   const thirdMatch = find(16) || principal.find(function(m) { return String(m.round || '').toLowerCase().includes('3'); });
   const champion = finalMatch && finalMatch.winner ? finalMatch.winner : 'Vainqueur à confirmer';
