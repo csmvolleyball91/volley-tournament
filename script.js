@@ -212,6 +212,7 @@ function ensureVisibleSection() {
 }
 
 function show(id) {
+  if (id !== 'score') document.body.classList.remove('score-live-active');
   document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('hidden');
@@ -776,10 +777,12 @@ function renderScoreSection() {
   if (!div || !listDiv) return;
 
   const active = activeScoreMatchId ? matches.find(m => m.id === activeScoreMatchId && m.status !== 'done') : null;
+  document.body.classList.toggle('score-live-active', !!active);
   const resumeList = resumeMatchesForDisplay();
   if (active) {
-    const others = resumeList.filter(function(x) { return String(x.id) !== String(active.id); });
-    div.innerHTML = renderMatchScoreboard(active) + renderResumeMatchesCard(others);
+    div.innerHTML = renderMatchScoreboard(active);
+    listDiv.innerHTML = '';
+    return;
   } else {
     div.innerHTML = resumeList.length
       ? renderResumeMatchesCard(resumeList)

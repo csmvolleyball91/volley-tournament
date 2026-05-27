@@ -2577,3 +2577,209 @@ body {
     font-size: 14px !important;
   }
 }
+
+
+/* v19.7 - Saisie score plein écran responsive : aucune superposition mobile/paysage */
+body.score-live-active {
+  overflow: hidden;
+  background: #f4f7ff;
+}
+body.score-live-active .hero,
+body.score-live-active .nav-grid,
+body.score-live-active #homeDashboard,
+body.score-live-active #score > h2,
+body.score-live-active #score > h3,
+body.score-live-active #score > p.small,
+body.score-live-active #matchLaunchList {
+  display: none !important;
+}
+body.score-live-active #score.section {
+  display: block !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+}
+body.score-live-active #courtView {
+  width: 100vw !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+body.score-live-active .scoreboard-full {
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+body.score-live-active .center-controls {
+  pointer-events: auto !important;
+  z-index: 50 !important;
+}
+body.score-live-active .mini-meta {
+  white-space: nowrap !important;
+  max-width: 95vw !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+body.score-live-active .finish-btn {
+  white-space: nowrap !important;
+}
+
+@media (orientation: portrait) {
+  body.score-live-active .scoreboard-full {
+    display: grid !important;
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+    background: #f4f7ff !important;
+  }
+  body.score-live-active .score-half {
+    min-height: 0 !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+    padding: max(8px, env(safe-area-inset-top)) 10px 8px !important;
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    justify-items: center !important;
+    gap: 4px !important;
+    box-shadow: none !important;
+  }
+  body.score-live-active .score-half.team-a { order: 1; }
+  body.score-live-active .center-controls {
+    order: 2;
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    min-height: 54px !important;
+    padding: 5px 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+    background: #ffffff !important;
+    border-top: 2px solid rgba(0,61,136,.12) !important;
+    border-bottom: 2px solid rgba(0,61,136,.12) !important;
+  }
+  body.score-live-active .score-half.team-b { order: 3; }
+  body.score-live-active .team-title {
+    font-size: clamp(22px, 8.2vw, 46px) !important;
+    line-height: .98 !important;
+    margin: 0 !important;
+    max-width: 98vw !important;
+  }
+  body.score-live-active .score-action {
+    width: clamp(74px, 25vw, 130px) !important;
+    height: clamp(74px, 25vw, 130px) !important;
+    min-width: 74px !important;
+    min-height: 74px !important;
+    border-radius: 20px !important;
+    font-size: clamp(48px, 17vw, 90px) !important;
+  }
+  body.score-live-active .bottom-action {
+    width: clamp(74px, 22vw, 120px) !important;
+    height: clamp(50px, 14vw, 78px) !important;
+    min-height: 50px !important;
+    font-size: clamp(42px, 14vw, 74px) !important;
+  }
+  body.score-live-active .mega-score {
+    font-size: clamp(70px, 24vw, 140px) !important;
+    line-height: .82 !important;
+    margin: 0 !important;
+  }
+  body.score-live-active .mini-meta {
+    font-size: 12px !important;
+    padding: 7px 10px !important;
+  }
+  body.score-live-active .finish-btn {
+    min-width: auto !important;
+    padding: 9px 12px !important;
+    font-size: 13px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+  body.score-live-active .scoreboard-full {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) clamp(118px, 18vw, 175px) minmax(0, 1fr) !important;
+    grid-template-rows: 1fr !important;
+    gap: 0 !important;
+    background: #ffffff !important;
+  }
+  body.score-live-active .score-half {
+    min-height: 0 !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    padding: 8px 8px max(8px, env(safe-area-inset-bottom)) !important;
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    justify-items: center !important;
+    gap: 3px !important;
+    box-shadow: none !important;
+  }
+  body.score-live-active .score-half.team-a { order: 1; }
+  body.score-live-active .center-controls {
+    order: 2;
+    position: static !important;
+    transform: none !important;
+    height: 100dvh !important;
+    width: auto !important;
+    padding: 8px 6px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    background: #ffffff !important;
+    border-left: 2px solid rgba(0,61,136,.12) !important;
+    border-right: 2px solid rgba(0,61,136,.12) !important;
+  }
+  body.score-live-active .score-half.team-b { order: 3; }
+  body.score-live-active .team-title {
+    font-size: clamp(18px, 4.5vw, 36px) !important;
+    line-height: .95 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+  body.score-live-active .score-action {
+    width: clamp(66px, 18vh, 104px) !important;
+    height: clamp(66px, 18vh, 104px) !important;
+    min-width: 66px !important;
+    min-height: 66px !important;
+    border-radius: 18px !important;
+    font-size: clamp(44px, 14vh, 74px) !important;
+  }
+  body.score-live-active .bottom-action {
+    width: clamp(70px, 20vh, 110px) !important;
+    height: clamp(42px, 13vh, 68px) !important;
+    min-height: 42px !important;
+    font-size: clamp(38px, 12vh, 64px) !important;
+  }
+  body.score-live-active .mega-score {
+    font-size: clamp(68px, 34vh, 150px) !important;
+    line-height: .8 !important;
+    margin: 0 !important;
+  }
+  body.score-live-active .mini-meta {
+    white-space: normal !important;
+    text-align: center !important;
+    font-size: 12px !important;
+    padding: 7px 8px !important;
+  }
+  body.score-live-active .finish-btn {
+    padding: 10px 8px !important;
+    font-size: 13px !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
