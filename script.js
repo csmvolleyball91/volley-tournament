@@ -3797,3 +3797,45 @@ setTimeout(function(){
     if (adminMsg && !adminMsg.innerText) adminMsg.innerText = 'Build ' + window.CSM_BUILD + ' chargé.';
   } catch(e) {}
 }, 1500);
+
+/* v19.2 - suppression via RPC Supabase (contourne les blocages RLS côté navigateur)
+   IMPORTANT : créer d'abord la fonction SQL public.csm_delete_matches(p_phase text). */
+window.CSM_BUILD = 'v19.2-rpc-delete-reset-2026-05-27';
+
+async function rpcDeleteMatches_v192(phase) {
+  const payload = (phase === undefined || phase === null) ? { p_phase: null } : { p_phase: phase };
+  const res = await client.rpc('csm_delete_matches', payload);
+  if (res.error) throw new Error('RPC csm_delete_matches : ' + res.error.message);
+  return res.data || 0;
+}
+
+hardDeleteEveryMatch_v191 = async function() {
+  await rpcDeleteMatches_v192(null);
+  const check = await client.from('matches').select('id,phase', { count: 'exact', head: false });
+  if (check.error) throw new Error('vérification après suppression : ' + check.error.message);
+  if ((check.data || []).length > 0) {
+    const phases = Array.from(new Set((check.data || []).map(function(m){ return m.phase || '-'; })));
+    throw new Error('suppression bloquée : il reste encore ' + (check.data || []).length + ' match(s) en base pour ' + phases.join(', '));
+  }
+};
+
+cleanPhase_v191 = async function(phases) {
+  const list = Array.isArray(phases) ? phases : [phases];
+  for (const ph of list) {
+    await rpcDeleteMatches_v192(ph);
+  }
+  const check = await client.from('matches').select('id,phase').in('phase', list);
+  if (check.error) throw new Error('vérification nettoyage phase : ' + check.error.message);
+  if ((check.data || []).length > 0) {
+    throw new Error('nettoyage incomplet : ' + (check.data || []).length + ' match(s) restent pour ' + list.join(', '));
+  }
+};
+
+setTimeout(function(){
+  try {
+    const adminMsg = document.getElementById('adminMsg');
+    if (adminMsg && (!adminMsg.innerText || adminMsg.innerText.indexOf('Build') === 0)) {
+      adminMsg.innerText = 'Build ' + window.CSM_BUILD + ' chargé.';
+    }
+  } catch(e) {}
+}, 1800);
