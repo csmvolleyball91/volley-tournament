@@ -2668,3 +2668,167 @@ body {
     min-width: 0 !important;
   }
 }
+
+/* v19.9 - SCORE STABLE: no layout refactor, desktop restored, mobile compact side-by-side */
+.score-screen {
+  padding: 0 !important;
+}
+.scoreboard-full.scoreboard-polish-k {
+  display: flex !important;
+  flex-direction: row !important;
+  min-height: 78vh !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
+}
+.scoreboard-full.scoreboard-polish-k .score-half {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  padding: 18px 12px !important;
+  justify-content: space-between !important;
+}
+.scoreboard-full.scoreboard-polish-k .team-title {
+  font-size: clamp(24px, 3.2vw, 48px) !important;
+  line-height: 1.05 !important;
+  max-width: 92% !important;
+  word-break: break-word !important;
+}
+.scoreboard-full.scoreboard-polish-k .mega-score {
+  font-size: clamp(120px, 17vw, 260px) !important;
+  line-height: .9 !important;
+}
+.scoreboard-full.scoreboard-polish-k .score-action {
+  width: clamp(96px, 10vw, 128px) !important;
+  height: clamp(96px, 10vw, 128px) !important;
+  min-width: clamp(96px, 10vw, 128px) !important;
+  min-height: clamp(96px, 10vw, 128px) !important;
+  font-size: clamp(58px, 6vw, 82px) !important;
+  border-radius: 22px !important;
+}
+.scoreboard-full.scoreboard-polish-k .bottom-action {
+  width: clamp(76px, 8vw, 104px) !important;
+  height: clamp(58px, 6.5vw, 84px) !important;
+  min-width: clamp(76px, 8vw, 104px) !important;
+  min-height: clamp(58px, 6.5vw, 84px) !important;
+  font-size: clamp(46px, 5vw, 68px) !important;
+}
+.scoreboard-full.scoreboard-polish-k .center-controls,
+.scoreboard-full.scoreboard-polish-k .center-controls-k {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(170px, 22vw) !important;
+  max-width: min(170px, 22vw) !important;
+  gap: 10px !important;
+  z-index: 40 !important;
+}
+
+@media (max-width: 700px) {
+  body { padding: 4px !important; }
+  .score-screen { padding: 0 !important; }
+  .score-access { display: none !important; }
+  .scoreboard-full.scoreboard-polish-k {
+    display: flex !important;
+    flex-direction: row !important;
+    min-height: calc(100svh - 12px) !important;
+    border-radius: 14px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .score-half {
+    flex: 1 1 0 !important;
+    width: 50% !important;
+    min-width: 0 !important;
+    padding: 8px 4px !important;
+    justify-content: space-between !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .team-title {
+    font-size: clamp(13px, 4vw, 20px) !important;
+    line-height: 1 !important;
+    margin-top: 2px !important;
+    max-width: 96% !important;
+    gap: 4px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .service-ball svg,
+  .scoreboard-full.scoreboard-polish-k .service-ball img {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .score-action {
+    width: clamp(58px, 17vw, 82px) !important;
+    height: clamp(58px, 17vw, 82px) !important;
+    min-width: clamp(58px, 17vw, 82px) !important;
+    min-height: clamp(58px, 17vw, 82px) !important;
+    font-size: clamp(38px, 11vw, 56px) !important;
+    border-radius: 16px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .bottom-action {
+    width: clamp(52px, 15vw, 72px) !important;
+    height: clamp(40px, 11vw, 56px) !important;
+    min-width: clamp(52px, 15vw, 72px) !important;
+    min-height: clamp(40px, 11vw, 56px) !important;
+    font-size: clamp(32px, 9vw, 46px) !important;
+    border-radius: 14px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .mega-score {
+    font-size: clamp(56px, 20vw, 94px) !important;
+    line-height: .9 !important;
+    margin: 0 !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .center-controls,
+  .scoreboard-full.scoreboard-polish-k .center-controls-k {
+    width: clamp(74px, 23vw, 96px) !important;
+    max-width: clamp(74px, 23vw, 96px) !important;
+    gap: 5px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .mini-meta {
+    font-size: 9px !important;
+    padding: 4px 5px !important;
+    line-height: 1.05 !important;
+    max-height: 28px !important;
+    overflow: hidden !important;
+    border-radius: 8px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .match-chrono {
+    margin: 1px auto !important;
+    padding: 4px 6px !important;
+    border-radius: 10px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .match-chrono .chrono-label { display: none !important; }
+  .scoreboard-full.scoreboard-polish-k .match-chrono .chrono-value { font-size: 13px !important; }
+  .scoreboard-full.scoreboard-polish-k .finish-btn,
+  .scoreboard-full.scoreboard-polish-k .finish-btn-k {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 6px 4px !important;
+    font-size: 9px !important;
+    line-height: 1.05 !important;
+    border-radius: 8px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .scoreboard-full.scoreboard-polish-k {
+    min-height: calc(100svh - 8px) !important;
+    border-radius: 12px !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .score-half { padding: 5px 5px !important; }
+  .scoreboard-full.scoreboard-polish-k .team-title { font-size: clamp(13px, 3vw, 22px) !important; }
+  .scoreboard-full.scoreboard-polish-k .score-action {
+    width: clamp(54px, 17vh, 82px) !important;
+    height: clamp(54px, 17vh, 82px) !important;
+    min-width: clamp(54px, 17vh, 82px) !important;
+    min-height: clamp(54px, 17vh, 82px) !important;
+    font-size: clamp(36px, 11vh, 56px) !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .bottom-action {
+    width: clamp(48px, 15vh, 68px) !important;
+    height: clamp(36px, 11vh, 50px) !important;
+    min-height: clamp(36px, 11vh, 50px) !important;
+    font-size: clamp(30px, 9vh, 42px) !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .mega-score { font-size: clamp(54px, 25vh, 115px) !important; }
+  .scoreboard-full.scoreboard-polish-k .center-controls,
+  .scoreboard-full.scoreboard-polish-k .center-controls-k {
+    width: clamp(74px, 14vw, 110px) !important;
+    max-width: clamp(74px, 14vw, 110px) !important;
+  }
+}
