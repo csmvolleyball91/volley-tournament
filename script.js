@@ -3684,203 +3684,172 @@ fillRandomMissingResults = async function(phase) {
   }
 };
 
-/* v18.8 - baseline propre ok.zip : plus aucune archive logique.
-   Reset complet = suppression réelle de TOUS les matchs, puis recréation B1.
-   Génération B2/Tableaux = suppression réelle des anciennes lignes de la phase concernée. */
-function activeMatchesOnly_v188(list) {
-  return (list || []).filter(function(m) {
-    return m && m.phase !== 'Archive' && m.phase !== '__ARCHIVE__' && m.status !== 'archived' && m.status !== 'reset_archived';
-  });
-}
+/* v18.8 CLEAN - no archives, reset deletes all matches, generation deletes previous phase */
+(function(){
+  function adminMessage(msg){ const el=document.getElementById('adminMsg'); if(el) el.innerText=msg; }
+  function isRealActiveMatchClean(m){ return m && m.phase !== 'Archive' && m.phase !== '__ARCHIVE__' && m.status !== 'archived' && m.status !== 'reset_archived'; }
 
-loadData = async function() {
-  const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
-  if (se) alert('Erreur settings: ' + se.message);
-  settings = s;
-
-  const { data: t, error: te } = await client.from('teams').select('*').order('id');
-  if (te) alert('Erreur teams: ' + te.message);
-  teams = t || [];
-
-  const { data: m, error: me } = await client.from('matches').select('*').order('scheduled_time').order('court');
-  if (me) alert('Erreur matches: ' + me.message);
-  matches = activeMatchesOnly_v188(m || []);
-
-  renderAll();
-  if (typeof ensureVisibleSection === 'function') ensureVisibleSection();
-};
-
-async function deleteMatchesByPhase_v188(phases) {
-  const res = await client.from('matches').delete().in('phase', phases);
-  if (res.error) throw new Error(res.error.message);
-}
-
-async function deleteAllMatches_v188() {
-  const res = await client.from('matches').delete().not('id', 'is', null);
-  if (res.error) throw new Error(res.error.message);
-  const check = await client.from('matches').select('id, phase, team_a, team_b').limit(5);
-  if (check.error) throw new Error('vérification suppression : ' + check.error.message);
-  if (check.data && check.data.length) {
-    throw new Error('des matchs restent en base après suppression : ' + check.data.map(function(m) { return '#' + m.id + ' ' + (m.phase || '-') + ' ' + (m.team_a || '?') + ' vs ' + (m.team_b || '?'); }).join(' / '));
-  }
-}
-
-resetScores = async function() {
-  if (!adminUnlocked) return;
-  if (!confirm('Reset complet du tournoi ?\n\nCela supprime TOUS les matchs existants puis recrée uniquement le Brassage 1.')) return;
-  const adminMsg = document.getElementById('adminMsg');
-  if (adminMsg) adminMsg.innerText = 'Reset complet en cours : suppression de tous les matchs...';
-
-  try {
-    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
-    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
-  } catch(e) {}
-  activeScoreMatchId = null;
-
-  try {
-    await deleteAllMatches_v188();
-  } catch(e) {
-    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
-    alert('Reset bloqué : ' + e.message + '\n\nAucun Brassage 1 ne sera recréé pour éviter les doublons.');
-    return;
-  }
-
-  if (adminMsg) adminMsg.innerText = 'Base vidée ✅ Recréation du Brassage 1...';
-  const rows = generateBrassage1Rows();
-  const ins = await client.from('matches').insert(rows);
-  if (ins.error) {
-    if (adminMsg) adminMsg.innerText = 'Erreur recréation Brassage 1 : ' + ins.error.message;
-    alert('Erreur recréation Brassage 1 : ' + ins.error.message);
-    return;
-  }
-
-  await loadData();
-  try {
-    const phaseFilter = document.getElementById('phaseFilter');
-    if (phaseFilter) phaseFilter.value = 'Brassage 1';
-    if (typeof renderPlanning === 'function') renderPlanning();
-  } catch(e) {}
-  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul Brassage 1 existe maintenant.';
-};
-
-regenerateBrassage1 = async function() {
-  if (!adminUnlocked) return;
-  if (!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront supprimés.')) return;
-  const adminMsg = document.getElementById('adminMsg');
-  try {
-    await deleteMatchesByPhase_v188(['Brassage 1']);
-    const rows = generateBrassage1Rows();
-    const ins = await client.from('matches').insert(rows);
-    if (ins.error) throw new Error(ins.error.message);
-    if (adminMsg) adminMsg.innerText = 'Brassage 1 régénéré ✅';
-    await loadData();
-  } catch(e) {
-    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + e.message;
-  }
-};
-
-async function generateBrassage2Silent_v188() {
-  const b1Matches = (matches || []).filter(function(m) { return m.phase === 'Brassage 1' && m.team_a && m.team_b; });
-  if (b1Matches.length !== 36) throw new Error('il faut 36 matchs en Brassage 1, trouvés ' + b1Matches.length);
-  const unfinished = b1Matches.filter(function(m) { return m.status !== 'done' || m.score_a === null || m.score_b === null; });
-  if (unfinished.length) throw new Error(unfinished.length + ' match(s) de Brassage 1 ne sont pas terminés');
-
-  const rankings = {};
-  ['A','B','C','D','E','F'].forEach(function(pool) {
-    rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
-    if (rankings[pool].length !== 4) throw new Error('Poule ' + pool + ' invalide : ' + rankings[pool].length + ' équipes classées');
-  });
-
-  const b2Pools = [
-    { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
-    { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
-    { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
-    { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
-    { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
-    { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
-  ];
-
-  const startB2 = getBrassage2StartTime();
-  let rows = [];
-  b2Pools.forEach(function(p) {
-    const poolTeams = p.source.map(function(src) { return rankings[src[0]][src[1]-1].name; });
-    rows.push.apply(rows, generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
-  });
-  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
-
-  await deleteMatchesByPhase_v188(['Brassage 2']);
-  const ins = await client.from('matches').insert(rows);
-  if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
-  return rows.length;
-}
-
-generateBrassage2 = async function() {
-  if (!adminUnlocked) return;
-  if (!confirm('Générer le Brassage 2 ? Les matchs Brassage 2 existants seront supprimés.')) return;
-  const adminMsg = document.getElementById('adminMsg');
-  try {
-    const count = await generateBrassage2Silent_v188();
-    if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
-    await loadData();
-  } catch(e) {
-    if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
-    alert('Impossible de générer Brassage 2 : ' + e.message);
-  }
-};
-
-generateBrackets = async function() {
-  if (!adminUnlocked) return;
-  const b2Matches = (matches || []).filter(function(m) { return m.phase === 'Brassage 2' && m.team_a && m.team_b; });
-  if (b2Matches.length !== 36) {
-    document.getElementById('adminMsg').innerText = 'Impossible : il faut 36 matchs en Brassage 2, trouvés ' + b2Matches.length + '.';
-    return;
-  }
-  const unfinished = b2Matches.filter(function(m) { return m.status !== 'done' || m.score_a === null || m.score_b === null; });
-  if (unfinished.length > 0) {
-    document.getElementById('adminMsg').innerText = 'Impossible : ' + unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés.';
-    return;
-  }
-  if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
-
-  const ranking = globalRanking();
-  const rows = bracketRowsFromRanking(ranking).map(function(r, idx) {
-    return Object.assign({}, r, {
-      court: r.court || ((idx % 6) + 1),
-      referee_team: null,
-      access_code: null
-    });
-  });
-
-  const adminMsg = document.getElementById('adminMsg');
-  try {
-    await deleteMatchesByPhase_v188(['Tableau principal','Consolante']);
-    const ins = await client.from('matches').insert(rows);
-    if (ins.error) throw new Error(ins.error.message);
-    if (adminMsg) adminMsg.innerText = 'Tableaux générés ✅ ' + rows.length + ' matchs créés.';
-    await loadData();
-  } catch(e) {
-    if (adminMsg) adminMsg.innerText = 'Erreur génération tableaux : ' + e.message;
-    alert('Erreur génération tableaux : ' + e.message);
-  }
-};
-
-// Corrige aussi le bouton test : après remplissage B1, utiliser la génération B2 sans archive.
-if (typeof fillRandomMissingResults_base_v181 !== 'undefined') {
-  fillRandomMissingResults = async function(phase) {
-    await fillRandomMissingResults_base_v181(phase);
-    if (phase === 'Brassage 1') {
-      await loadData();
-      const hasB2 = activePhaseRows_v181('Brassage 2').length > 0;
-      if (!hasB2 && phaseDone_v181('Brassage 1')) {
-        const adminMsg = document.getElementById('adminMsg');
-        try {
-          const count = await generateBrassage2Silent_v188();
-          if (adminMsg) adminMsg.innerText += ' Brassage 2 généré automatiquement ✅ (' + count + ' matchs).';
-          await loadData();
-        } catch(e) {
-          if (adminMsg) adminMsg.innerText += ' Génération B2 bloquée : ' + e.message;
-        }
+  async function deleteMatchesByIdsOrPhase(phases){
+    // First fetch matching rows fresh from DB to avoid deleting only the current UI cache.
+    let q = client.from('matches').select('id,phase');
+    if (phases && phases.length) q = q.in('phase', phases);
+    const sel = await q;
+    if (sel.error) throw new Error('lecture avant suppression : ' + sel.error.message);
+    const ids = (sel.data || []).map(r => r.id).filter(id => id !== null && id !== undefined);
+    for (let i=0;i<ids.length;i+=100){
+      const chunk = ids.slice(i,i+100);
+      if(chunk.length){
+        const del = await client.from('matches').delete().in('id', chunk);
+        if(del.error) throw new Error('suppression : ' + del.error.message);
       }
     }
+    // Verification
+    let c = client.from('matches').select('id,phase').limit(1);
+    if (phases && phases.length) c = c.in('phase', phases);
+    const check = await c;
+    if (check.error) throw new Error('vérification suppression : ' + check.error.message);
+    if ((check.data || []).length) throw new Error('des lignes restent après suppression');
+    return ids.length;
+  }
+
+  async function deleteAllMatchesClean(){
+    const sel = await client.from('matches').select('id');
+    if(sel.error) throw new Error('lecture matches : ' + sel.error.message);
+    const ids = (sel.data || []).map(r=>r.id).filter(id=>id!==null && id!==undefined);
+    for(let i=0;i<ids.length;i+=100){
+      const chunk=ids.slice(i,i+100);
+      if(chunk.length){
+        const del=await client.from('matches').delete().in('id', chunk);
+        if(del.error) throw new Error('suppression matches : ' + del.error.message);
+      }
+    }
+    const check=await client.from('matches').select('id').limit(1);
+    if(check.error) throw new Error('vérification reset : ' + check.error.message);
+    if((check.data||[]).length) throw new Error('des matchs restent en base après reset');
+    return ids.length;
+  }
+
+  loadData = async function(){
+    const { data:s, error:se } = await client.from('settings').select('*').eq('id',1).single();
+    if(se) alert('Erreur settings: ' + se.message);
+    settings = s;
+    const { data:t, error:te } = await client.from('teams').select('*').order('id');
+    if(te) alert('Erreur teams: ' + te.message);
+    teams = t || [];
+    const { data:m, error:me } = await client.from('matches').select('*').order('scheduled_time').order('court').order('id');
+    if(me) alert('Erreur matches: ' + me.message);
+    matches = (m || []).filter(isRealActiveMatchClean);
+    renderAll();
+    if (typeof ensureVisibleSection === 'function') ensureVisibleSection();
   };
-}
+
+  resetScores = async function(){
+    if(!adminUnlocked) return;
+    if(!confirm('Reset complet du tournoi ?\n\nTous les matchs seront supprimés, puis le Brassage 1 sera recréé.')) return;
+    try{
+      adminMessage('Reset en cours : suppression de tous les matchs...');
+      try{ (matches||[]).forEach(m => { if(typeof clearMatchRuntimeLocalState==='function') clearMatchRuntimeLocalState(m.id); }); }catch(e){}
+      try{ if(typeof clearAllVolleyLocalStorage_v173x==='function') clearAllVolleyLocalStorage_v173x(); }catch(e){}
+      activeScoreMatchId = null;
+      await deleteAllMatchesClean();
+      adminMessage('Base nettoyée ✅ Recréation du Brassage 1...');
+      const rows = generateBrassage1Rows();
+      const ins = await client.from('matches').insert(rows);
+      if(ins.error) throw new Error('création Brassage 1 : ' + ins.error.message);
+      await loadData();
+      adminMessage('Reset complet effectué ✅ Uniquement Brassage 1 a été recréé.');
+    }catch(e){
+      adminMessage('Reset bloqué ❌ ' + e.message);
+      alert('Reset bloqué : ' + e.message);
+    }
+  };
+
+  regenerateBrassage1 = async function(){
+    if(!adminUnlocked) return;
+    if(!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront supprimés.')) return;
+    try{
+      adminMessage('Suppression Brassage 1...');
+      await deleteMatchesByIdsOrPhase(['Brassage 1']);
+      const rows = generateBrassage1Rows();
+      const ins = await client.from('matches').insert(rows);
+      if(ins.error) throw new Error(ins.error.message);
+      await loadData();
+      adminMessage('Brassage 1 régénéré ✅');
+    }catch(e){ adminMessage('Erreur régénération B1 : ' + e.message); }
+  };
+
+  async function generateBrassage2Clean(){
+    const b1Matches = (matches || []).filter(m => m.phase === 'Brassage 1' && m.team_a && m.team_b);
+    if (b1Matches.length !== 36) throw new Error('il faut 36 matchs en Brassage 1, trouvés ' + b1Matches.length);
+    const unfinished = b1Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
+    if (unfinished.length) throw new Error(unfinished.length + ' match(s) de Brassage 1 ne sont pas terminés');
+    const rankings = {};
+    ['A','B','C','D','E','F'].forEach(function(pool){
+      rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
+      if (rankings[pool].length !== 4) throw new Error('Poule ' + pool + ' invalide : ' + rankings[pool].length + ' équipes classées');
+    });
+    const b2Pools = [
+      { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
+      { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
+      { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
+      { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
+      { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
+      { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
+    ];
+    const startB2 = getBrassage2StartTime();
+    let rows = [];
+    b2Pools.forEach(function(p){
+      const poolTeams = p.source.map(src => rankings[src[0]][src[1]-1].name);
+      rows.push.apply(rows, generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
+    });
+    rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
+    await deleteMatchesByIdsOrPhase(['Brassage 2']);
+    const ins = await client.from('matches').insert(rows);
+    if(ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
+    return rows.length;
+  }
+
+  generateBrassage2 = async function(){
+    if(!adminUnlocked) return;
+    if(!confirm('Générer le Brassage 2 ? Les matchs Brassage 2 existants seront supprimés.')) return;
+    try{
+      const count = await generateBrassage2Clean();
+      await loadData();
+      adminMessage('Brassage 2 généré ✅ ' + count + ' matchs créés.');
+    }catch(e){ adminMessage('Impossible de générer Brassage 2 : ' + e.message); alert('Impossible de générer Brassage 2 : ' + e.message); }
+  };
+
+  generateBrackets = async function(){
+    if(!adminUnlocked) return;
+    const b2Matches = (matches || []).filter(m => m.phase === 'Brassage 2' && m.team_a && m.team_b);
+    if (b2Matches.length !== 36) { adminMessage('Impossible : il faut 36 matchs en Brassage 2, trouvés ' + b2Matches.length + '. Fais un Reset complet puis régénère B2 pour supprimer les doublons.'); return; }
+    const unfinished = b2Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
+    if (unfinished.length) { adminMessage('Impossible : ' + unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés.'); return; }
+    if(!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+    try{
+      const ranking = globalRanking();
+      const rows = bracketRowsFromRanking(ranking).map((r,idx)=>({ ...r, court: r.court || ((idx % 6)+1), referee_team:null, access_code:null }));
+      await deleteMatchesByIdsOrPhase(['Tableau principal','Consolante']);
+      const ins = await client.from('matches').insert(rows);
+      if(ins.error) throw new Error(ins.error.message);
+      await loadData();
+      adminMessage('Tableaux générés ✅ ' + rows.length + ' matchs créés.');
+    }catch(e){ adminMessage('Erreur génération tableaux : ' + e.message); alert('Erreur génération tableaux : ' + e.message); }
+  };
+
+  // Patch test button path so it does not create duplicate B2 via old archive logic.
+  if (typeof fillRandomMissingResults === 'function') {
+    const oldFillClean = fillRandomMissingResults;
+    fillRandomMissingResults = async function(phase){
+      await oldFillClean(phase);
+      if(phase === 'Brassage 1'){
+        await loadData();
+        const hasB2 = (matches||[]).some(m => m.phase === 'Brassage 2');
+        if(!hasB2 && phaseDone_v181('Brassage 1')){
+          try{ const count = await generateBrassage2Clean(); await loadData(); adminMessage('Brassage 1 rempli ✅ Brassage 2 généré automatiquement ✅ (' + count + ' matchs).'); }
+          catch(e){ adminMessage('Génération B2 bloquée : ' + e.message); }
+        }
+      }
+    };
+  }
+})();
