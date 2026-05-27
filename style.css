@@ -2400,30 +2400,3 @@ body {
   background: #fee2e2;
   color: #991b1b;
 }
-
-/* v18.2 - Tableaux : vue organisateur en tableau */
-.bracket-table-card {
-  background: var(--card);
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  margin-top: 16px;
-}
-.bracket-table-head {
-  margin-bottom: 12px;
-}
-.bracket-match-table th,
-.bracket-match-table td {
-  white-space: nowrap;
-  vertical-align: middle;
-}
-.bracket-match-table .team-cell {
-  min-width: 150px;
-}
-.bracket-match-table .score-cell {
-  font-weight: 800;
-  text-align: center;
-}
-.bracket-match-table .match-row-done {
-  background: rgba(22, 163, 74, 0.08);
-}
