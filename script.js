@@ -2106,6 +2106,69 @@ function isPublicMatchLive(m) {
   return false;
 }
 
+
+function escPublic(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+  });
+}
+
+function publicBracketScore(value) {
+  return value == null || value === '' ? '-' : escPublic(value);
+}
+
+function publicBracketTeamRow(name, score, winner, sideName) {
+  const isWinner = winner && sideName && String(winner) === String(sideName);
+  return '<div class="public-bracket-team ' + (isWinner ? 'is-winner' : '') + '">' +
+    '<div class="public-bracket-name">' + escPublic(name || 'À définir') + '</div>' +
+    '<div class="public-bracket-score">' + publicBracketScore(score) + '</div>' +
+  '</div>';
+}
+
+function publicBracketCard(m, typeClass) {
+  if (!m) {
+    return '<div class="public-bracket-card is-empty ' + (typeClass || '') + '">' +
+      publicBracketTeamRow('À définir', '-', '', '') + publicBracketTeamRow('À définir', '-', '', '') + '</div>';
+  }
+  const label = (m.court ? 'T' + m.court : 'Terrain -') + (computedScheduledTime(m) ? ' · ' + computedScheduledTime(m) : '');
+  return '<div class="public-bracket-card ' + (typeClass || '') + ' ' + (m.status === 'done' ? 'is-done' : '') + '">' +
+    '<div class="public-bracket-meta">' + escPublic(label) + '</div>' +
+    publicBracketTeamRow(m.team_a, m.score_a, m.winner, m.team_a) +
+    publicBracketTeamRow(m.team_b, m.score_b, m.winner, m.team_b) +
+  '</div>';
+}
+
+function renderPublicBracketScreen(clock, phase, phaseEtaLabel) {
+  const principal = matches.filter(function(m) { return m.bracket === 'Principal' || m.phase === 'Tableau principal'; });
+  const consolation = matches.filter(function(m) { return m.bracket === 'Consolante' || m.phase === 'Consolante'; });
+  if (!principal.length && !consolation.length) return '';
+
+  function byOrder(a,b) { return Number(a.match_order || 0) - Number(b.match_order || 0); }
+  function find(order) { return principal.find(function(m) { return Number(m.match_order) === Number(order); }); }
+  const r16 = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('1/8'); }).sort(byOrder);
+  const quarters = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('quart'); }).sort(byOrder);
+  const semis = principal.filter(function(m) { return String(m.round || '').toLowerCase().includes('demi'); }).sort(byOrder);
+  const finalMatch = find(15) || principal.find(function(m) { return String(m.round || '').toLowerCase().includes('finale') && !String(m.round || '').includes('3'); });
+  const thirdMatch = find(16) || principal.find(function(m) { return String(m.round || '').toLowerCase().includes('3'); });
+  const champion = finalMatch && finalMatch.winner ? finalMatch.winner : 'Vainqueur à confirmer';
+
+  return '<div class="public-tv premium-tv-screen public-bracket-tv">' +
+    '<div class="public-tv-header premium-tv-header public-bracket-header">' +
+      '<div class="public-brand-block"><img src="club-logo.png" alt="CSM" class="public-logo"><div><div class="public-tv-title">Tableau final</div><div class="public-tv-subtitle">' + escPublic(phase) + ' · ' + escPublic(phaseEtaLabel) + '</div></div></div>' +
+      '<div class="public-clock premium-clock">' + escPublic(clock) + '</div>' +
+    '</div>' +
+    '<div class="public-bracket-legend"><span class="legend-yellow"></span> Tableau principal <span class="legend-blue"></span> Petite finale</div>' +
+    '<div class="public-bracket-grid">' +
+      '<div class="public-bracket-col public-bracket-col-r16"><h3>1/8 finale</h3>' + r16.map(function(m){ return publicBracketCard(m, 'line-yellow'); }).join('') + '</div>' +
+      '<div class="public-bracket-col public-bracket-col-q"><h3>1/4 finale</h3>' + quarters.map(function(m){ return publicBracketCard(m, 'line-yellow'); }).join('') + '</div>' +
+      '<div class="public-bracket-col public-bracket-col-s"><h3>1/2 finale</h3>' + semis.map(function(m){ return publicBracketCard(m, 'line-yellow'); }).join('') + '</div>' +
+      '<div class="public-bracket-col public-bracket-col-final"><h3>Finale</h3>' + publicBracketCard(finalMatch, 'line-yellow final-card') + '<div class="public-champion-card"><span>Champion</span><b>' + escPublic(champion) + '</b></div></div>' +
+      '<div class="public-bracket-col public-bracket-col-third"><h3>Petite finale</h3>' + publicBracketCard(thirdMatch, 'line-blue third-card') + '</div>' +
+    '</div>' +
+    (consolation.length ? '<div class="public-bracket-note">Consolante disponible dans la vue organisateur.</div>' : '') +
+  '</div>';
+}
+
 function renderPublicView() {
   const div = document.getElementById('publicViewContent');
   if (!div) return;
@@ -2182,6 +2245,12 @@ function renderPublicView() {
       body + nextHtml +
     '</div>';
   }).join('');
+
+  const publicBracketHtml = renderPublicBracketScreen(clock, phase, phaseEtaLabel);
+  if (publicBracketHtml && String(phase || '').toLowerCase().includes('tableau')) {
+    div.innerHTML = publicBracketHtml;
+    return;
+  }
 
   div.innerHTML = '<div class="public-tv premium-tv-screen">' +
     '<div class="public-tv-header premium-tv-header">' +
