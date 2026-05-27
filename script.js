@@ -3684,84 +3684,203 @@ fillRandomMissingResults = async function(phase) {
   }
 };
 
-/* v18.2-clean - Fix génération Tableaux depuis ok.zip
-   Objectif : ne pas dépendre du DELETE Supabase/RLS.
-   On archive les anciens tableaux puis on insère les nouveaux.
-*/
-function activeMatchesForPhase_v182(phase) {
-  return (matches || []).filter(function(m) {
-    return m && m.phase === phase && !isArchivedMatch_v173y(m) && m.team_a && m.team_b;
+/* v18.8 - baseline propre ok.zip : plus aucune archive logique.
+   Reset complet = suppression réelle de TOUS les matchs, puis recréation B1.
+   Génération B2/Tableaux = suppression réelle des anciennes lignes de la phase concernée. */
+function activeMatchesOnly_v188(list) {
+  return (list || []).filter(function(m) {
+    return m && m.phase !== 'Archive' && m.phase !== '__ARCHIVE__' && m.status !== 'archived' && m.status !== 'reset_archived';
   });
 }
 
-async function archiveTableaux_v182() {
-  // Archive les anciens tableaux si présents. On ne fait pas DELETE car il peut être bloqué par RLS.
-  const upd = await client.from('matches').update({
-    phase: 'Archive',
-    status: 'done',
-    score_a: 0,
-    score_b: 0,
-    winner: null
-  }).in('phase', ['Tableau principal', 'Consolante']);
-  if (upd.error) throw new Error('archivage anciens tableaux : ' + upd.error.message);
+loadData = async function() {
+  const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
+  if (se) alert('Erreur settings: ' + se.message);
+  settings = s;
+
+  const { data: t, error: te } = await client.from('teams').select('*').order('id');
+  if (te) alert('Erreur teams: ' + te.message);
+  teams = t || [];
+
+  const { data: m, error: me } = await client.from('matches').select('*').order('scheduled_time').order('court');
+  if (me) alert('Erreur matches: ' + me.message);
+  matches = activeMatchesOnly_v188(m || []);
+
+  renderAll();
+  if (typeof ensureVisibleSection === 'function') ensureVisibleSection();
+};
+
+async function deleteMatchesByPhase_v188(phases) {
+  const res = await client.from('matches').delete().in('phase', phases);
+  if (res.error) throw new Error(res.error.message);
 }
+
+async function deleteAllMatches_v188() {
+  const res = await client.from('matches').delete().not('id', 'is', null);
+  if (res.error) throw new Error(res.error.message);
+  const check = await client.from('matches').select('id, phase, team_a, team_b').limit(5);
+  if (check.error) throw new Error('vérification suppression : ' + check.error.message);
+  if (check.data && check.data.length) {
+    throw new Error('des matchs restent en base après suppression : ' + check.data.map(function(m) { return '#' + m.id + ' ' + (m.phase || '-') + ' ' + (m.team_a || '?') + ' vs ' + (m.team_b || '?'); }).join(' / '));
+  }
+}
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nCela supprime TOUS les matchs existants puis recrée uniquement le Brassage 1.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours : suppression de tous les matchs...';
+
+  try {
+    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+  } catch(e) {}
+  activeScoreMatchId = null;
+
+  try {
+    await deleteAllMatches_v188();
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message + '\n\nAucun Brassage 1 ne sera recréé pour éviter les doublons.');
+    return;
+  }
+
+  if (adminMsg) adminMsg.innerText = 'Base vidée ✅ Recréation du Brassage 1...';
+  const rows = generateBrassage1Rows();
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur recréation Brassage 1 : ' + ins.error.message;
+    alert('Erreur recréation Brassage 1 : ' + ins.error.message);
+    return;
+  }
+
+  await loadData();
+  try {
+    const phaseFilter = document.getElementById('phaseFilter');
+    if (phaseFilter) phaseFilter.value = 'Brassage 1';
+    if (typeof renderPlanning === 'function') renderPlanning();
+  } catch(e) {}
+  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Seul Brassage 1 existe maintenant.';
+};
+
+regenerateBrassage1 = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Régénérer Brassage 1 ? Les matchs Brassage 1 existants seront supprimés.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  try {
+    await deleteMatchesByPhase_v188(['Brassage 1']);
+    const rows = generateBrassage1Rows();
+    const ins = await client.from('matches').insert(rows);
+    if (ins.error) throw new Error(ins.error.message);
+    if (adminMsg) adminMsg.innerText = 'Brassage 1 régénéré ✅';
+    await loadData();
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + e.message;
+  }
+};
+
+async function generateBrassage2Silent_v188() {
+  const b1Matches = (matches || []).filter(function(m) { return m.phase === 'Brassage 1' && m.team_a && m.team_b; });
+  if (b1Matches.length !== 36) throw new Error('il faut 36 matchs en Brassage 1, trouvés ' + b1Matches.length);
+  const unfinished = b1Matches.filter(function(m) { return m.status !== 'done' || m.score_a === null || m.score_b === null; });
+  if (unfinished.length) throw new Error(unfinished.length + ' match(s) de Brassage 1 ne sont pas terminés');
+
+  const rankings = {};
+  ['A','B','C','D','E','F'].forEach(function(pool) {
+    rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
+    if (rankings[pool].length !== 4) throw new Error('Poule ' + pool + ' invalide : ' + rankings[pool].length + ' équipes classées');
+  });
+
+  const b2Pools = [
+    { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
+    { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
+    { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
+    { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
+    { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
+    { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
+  ];
+
+  const startB2 = getBrassage2StartTime();
+  let rows = [];
+  b2Pools.forEach(function(p) {
+    const poolTeams = p.source.map(function(src) { return rankings[src[0]][src[1]-1].name; });
+    rows.push.apply(rows, generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
+  });
+  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
+
+  await deleteMatchesByPhase_v188(['Brassage 2']);
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
+  return rows.length;
+}
+
+generateBrassage2 = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Générer le Brassage 2 ? Les matchs Brassage 2 existants seront supprimés.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  try {
+    const count = await generateBrassage2Silent_v188();
+    if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
+    await loadData();
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
+    alert('Impossible de générer Brassage 2 : ' + e.message);
+  }
+};
 
 generateBrackets = async function() {
   if (!adminUnlocked) return;
+  const b2Matches = (matches || []).filter(function(m) { return m.phase === 'Brassage 2' && m.team_a && m.team_b; });
+  if (b2Matches.length !== 36) {
+    document.getElementById('adminMsg').innerText = 'Impossible : il faut 36 matchs en Brassage 2, trouvés ' + b2Matches.length + '.';
+    return;
+  }
+  const unfinished = b2Matches.filter(function(m) { return m.status !== 'done' || m.score_a === null || m.score_b === null; });
+  if (unfinished.length > 0) {
+    document.getElementById('adminMsg').innerText = 'Impossible : ' + unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés.';
+    return;
+  }
+  if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+
+  const ranking = globalRanking();
+  const rows = bracketRowsFromRanking(ranking).map(function(r, idx) {
+    return Object.assign({}, r, {
+      court: r.court || ((idx % 6) + 1),
+      referee_team: null,
+      access_code: null
+    });
+  });
+
   const adminMsg = document.getElementById('adminMsg');
-
   try {
-    await loadData();
-
-    const b2Matches = activeMatchesForPhase_v182('Brassage 2');
-    if (b2Matches.length !== 36) {
-      const counts = (matches || []).reduce(function(acc, m) {
-        const p = m && m.phase ? m.phase : '-';
-        acc[p] = (acc[p] || 0) + 1;
-        return acc;
-      }, {});
-      throw new Error('il faut 36 matchs actifs en Brassage 2, trouvés ' + b2Matches.length + ' (' + Object.keys(counts).map(function(k){ return k + ':' + counts[k]; }).join(', ') + ')');
-    }
-
-    const unfinished = b2Matches.filter(function(m) {
-      return m.status !== 'done' || m.score_a === null || m.score_a === undefined || m.score_b === null || m.score_b === undefined;
-    });
-    if (unfinished.length) {
-      throw new Error(unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés');
-    }
-
-    if (!confirm('Générer la phase Tableau ? Les anciens tableaux seront archivés puis recréés.')) return;
-
-    if (adminMsg) adminMsg.innerText = 'Génération tableaux en cours : archivage des anciens tableaux...';
-    await archiveTableaux_v182();
-
-    const ranking = globalRanking();
-    const rows = bracketRowsFromRanking(ranking).map(function(r, idx) {
-      return Object.assign({}, r, {
-        court: r.court || ((idx % Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6))) + 1),
-        status: 'pending',
-        score_a: 0,
-        score_b: 0,
-        winner: null,
-        referee_team: null,
-        access_code: null
-      });
-    });
-
+    await deleteMatchesByPhase_v188(['Tableau principal','Consolante']);
     const ins = await client.from('matches').insert(rows);
-    if (ins.error) throw new Error('création tableaux : ' + ins.error.message);
-
+    if (ins.error) throw new Error(ins.error.message);
     if (adminMsg) adminMsg.innerText = 'Tableaux générés ✅ ' + rows.length + ' matchs créés.';
     await loadData();
-
-    try {
-      const phaseFilter = document.getElementById('phaseFilter');
-      if (phaseFilter) phaseFilter.value = 'Tableau principal';
-      if (typeof showSection === 'function') showSection('planning');
-      if (typeof renderPlanning === 'function') renderPlanning();
-    } catch(e) {}
   } catch(e) {
-    if (adminMsg) adminMsg.innerText = 'Impossible de générer les tableaux : ' + e.message;
-    alert('Impossible de générer les tableaux : ' + e.message);
+    if (adminMsg) adminMsg.innerText = 'Erreur génération tableaux : ' + e.message;
+    alert('Erreur génération tableaux : ' + e.message);
   }
 };
+
+// Corrige aussi le bouton test : après remplissage B1, utiliser la génération B2 sans archive.
+if (typeof fillRandomMissingResults_base_v181 !== 'undefined') {
+  fillRandomMissingResults = async function(phase) {
+    await fillRandomMissingResults_base_v181(phase);
+    if (phase === 'Brassage 1') {
+      await loadData();
+      const hasB2 = activePhaseRows_v181('Brassage 2').length > 0;
+      if (!hasB2 && phaseDone_v181('Brassage 1')) {
+        const adminMsg = document.getElementById('adminMsg');
+        try {
+          const count = await generateBrassage2Silent_v188();
+          if (adminMsg) adminMsg.innerText += ' Brassage 2 généré automatiquement ✅ (' + count + ' matchs).';
+          await loadData();
+        } catch(e) {
+          if (adminMsg) adminMsg.innerText += ' Génération B2 bloquée : ' + e.message;
+        }
+      }
+    }
+  };
+}
