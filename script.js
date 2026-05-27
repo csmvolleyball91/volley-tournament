@@ -263,31 +263,71 @@ function currentPhaseName() {
   return next ? (next.phase || 'Phase en cours') : 'Tournoi terminé';
 }
 
-function estimatedPhaseEnd(phase) {
-  if (!phase || phase === 'Tournoi terminé') return '-';
+function minutesOfDayFromTime(time) {
+  if (!time || typeof time !== 'string') return null;
+  const parts = time.split(':').map(Number);
+  if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+}
+
+function timeFromMinutesOfDay(total) {
+  total = Math.max(0, Math.round(Number(total) || 0));
+  const day = 24 * 60;
+  total = ((total % day) + day) % day;
+  return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+}
+
+function nowMinutesOfDay() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function plannedPhaseEndMinutes(phase) {
+  if (!phase || phase === 'Tournoi terminé') return null;
   const list = phaseMatches(phase);
-  if (!list.length) return '-';
+  if (!list.length) return null;
   const last = list.slice().sort(function(a,b) {
     return (computedScheduledTime(b) || '').localeCompare(computedScheduledTime(a) || '') || Number(b.id || 0) - Number(a.id || 0);
   })[0];
   const start = computedScheduledTime(last) || (settings && settings.start_time) || '09:30';
-  return addMinutes(start, Number(settings && settings.match_duration ? settings.match_duration : 12) + getTournamentPauseMinutes());
+  const startMin = minutesOfDayFromTime(start);
+  if (startMin == null) return null;
+  return startMin + Number(settings && settings.match_duration ? settings.match_duration : 12) + getTournamentPauseMinutes();
+}
+
+function estimatedPhaseEndMinutes(phase) {
+  if (!phase || phase === 'Tournoi terminé') return null;
+  const list = phaseMatches(phase);
+  if (!list.length) return null;
+
+  const remaining = list.filter(function(m) { return m.status !== 'done'; });
+  if (!remaining.length) return plannedPhaseEndMinutes(phase);
+
+  const live = remaining.filter(function(m) { return m.status === 'live'; });
+  const pending = remaining.filter(function(m) { return m.status !== 'live'; });
+  const courts = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
+  const slot = Number(settings && settings.match_duration ? settings.match_duration : 12) + Number(settings && settings.break_duration ? settings.break_duration : 0);
+
+  // Estimation dynamique : on part de l'heure réelle actuelle, pas du planning théorique.
+  // Les matchs en cours comptent comme une vague déjà lancée ; les matchs en attente sont répartis sur les terrains.
+  const waves = (live.length ? 1 : 0) + Math.ceil(pending.length / courts);
+  const dynamicEnd = nowMinutesOfDay() + Math.max(1, waves) * slot + getTournamentPauseMinutes();
+  const plannedEnd = plannedPhaseEndMinutes(phase);
+
+  // Avant le départ réel, on conserve l'heure prévue. Dès que le tournoi prend du retard, l'estimation glisse.
+  return plannedEnd == null ? dynamicEnd : Math.max(plannedEnd, dynamicEnd);
+}
+
+function estimatedPhaseEnd(phase) {
+  const end = estimatedPhaseEndMinutes(phase);
+  return end == null ? '-' : timeFromMinutesOfDay(end);
 }
 
 function phaseDelayMinutes(phase) {
-  const live = matches.filter(function(m) { return m.phase === phase && m.status === 'live' && m.team_a && m.team_b; });
-  if (!live.length) return 0;
-  let maxDelay = 0;
-  live.forEach(function(m) {
-    const theoretical = computedScheduledTime(m);
-    const real = timeFromIsoOrTime(getMatchStartedValue(m));
-    if (!theoretical || !real) return;
-    const th = theoretical.split(':').map(Number);
-    const rr = real.split(':').map(Number);
-    const delay = (rr[0]*60 + rr[1]) - (th[0]*60 + th[1]);
-    if (delay > maxDelay) maxDelay = delay;
-  });
-  return maxDelay;
+  const plannedEnd = plannedPhaseEndMinutes(phase);
+  const estimatedEnd = estimatedPhaseEndMinutes(phase);
+  if (plannedEnd == null || estimatedEnd == null) return 0;
+  return Math.max(0, Math.round(estimatedEnd - plannedEnd));
 }
 
 function renderTimeline(phase) {
@@ -4126,7 +4166,7 @@ nextPlayableMatches = function(limit = 6) {
 
 window.CSM_BUILD = 'v19.13-equilibrage-tableaux-principal-consolante';
 
-/* v19.14 - vrai équilibrage affichage/lancement tableaux
+/* v19.15 - vrai équilibrage affichage/lancement tableaux
    Correction : l'ancien tri classait Tableau principal avant Consolante via phasePlayOrderValue,
    donc les 6 cartes affichées étaient toutes en principal. Pour les matchs de tableau,
    on trie maintenant d'abord par séquence équilibrée : P1-P4, C1-C2, P5-P8, C3-C4.
@@ -4174,4 +4214,4 @@ if (typeof renderPublicView === 'function') {
   // Le point critique pour la saisie organisateur est nextPlayableMatches ci-dessus.
 }
 
-window.CSM_BUILD = 'v19.14-equilibrage-tableaux-reel';
+window.CSM_BUILD = 'v19.15-equilibrage-tableaux-reel';
