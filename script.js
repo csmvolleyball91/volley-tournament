@@ -3890,3 +3890,24 @@ serviceBall = function(m, side) {
 };
 
 window.CSM_BUILD = 'v19.10-mobile-score-clean';
+
+/* v19.11 - no chrono on bracket/tableau matches: tableaux are played to 25 points */
+const chronoHtml_base_v1911 = chronoHtml;
+chronoHtml = function(m) {
+  if (m && typeof isBracketMatch === 'function' && isBracketMatch(m)) return '';
+  return chronoHtml_base_v1911(m);
+};
+
+const maybeWarnChronoEnded_base_v1911 = maybeWarnChronoEnded;
+maybeWarnChronoEnded = function(m) {
+  if (m && typeof isBracketMatch === 'function' && isBracketMatch(m)) return;
+  return maybeWarnChronoEnded_base_v1911(m);
+};
+
+const ensureMatchChronoStarted_base_v1911 = ensureMatchChronoStarted;
+ensureMatchChronoStarted = function(m) {
+  if (m && typeof isBracketMatch === 'function' && isBracketMatch(m)) return;
+  return ensureMatchChronoStarted_base_v1911(m);
+};
+
+window.CSM_BUILD = 'v19.11-no-chrono-tableaux';
