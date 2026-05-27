@@ -3684,35 +3684,48 @@ fillRandomMissingResults = async function(phase) {
   }
 };
 
-/* v19.0 - CLEAN FIX: no archives, hard reset matches, no B2 duplicates */
-async function deleteMatchesWhere_v190(filterFnLabel, queryBuilder) {
-  const res = await queryBuilder;
-  if (res.error) throw new Error(filterFnLabel + ' : ' + res.error.message);
-}
+/* v19.1 FINAL - Reset propre sans archives, patch placé tout en bas pour écraser les anciennes surcharges */
+window.CSM_BUILD = 'v19.1-reset-hard-clean-2026-05-27';
 
-async function deleteAllMatches_v190() {
-  const del = await client.from('matches').delete().not('id', 'is', null);
-  if (del.error) throw new Error('suppression totale matches : ' + del.error.message);
-  const check = await client.from('matches').select('id', { count: 'exact', head: true });
-  if (check.error) throw new Error('vérification suppression : ' + check.error.message);
-  if ((check.count || 0) !== 0) throw new Error('des matchs existent encore après suppression (' + check.count + ')');
+async function hardDeleteEveryMatch_v191() {
+  // On ne se base pas sur la variable locale `matches`, car elle peut filtrer les archives côté navigateur.
+  const sel = await client.from('matches').select('id');
+  if (sel.error) throw new Error('lecture des matchs avant suppression : ' + sel.error.message);
+  const ids = (sel.data || []).map(function(r){ return r.id; }).filter(function(id){ return id !== null && id !== undefined; });
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const del = await client.from('matches').delete().in('id', chunk);
+    if (del.error) throw new Error('suppression matches : ' + del.error.message);
+  }
+
+  // Vérification réelle : si la base contient encore des lignes, on affiche les phases restantes.
+  const check = await client.from('matches').select('phase', { count: 'exact', head: false });
+  if (check.error) throw new Error('vérification après suppression : ' + check.error.message);
+  if ((check.data || []).length > 0) {
+    const phases = Array.from(new Set((check.data || []).map(function(m){ return m.phase || '-'; })));
+    throw new Error('suppression bloquée : il reste encore ' + (check.data || []).length + ' match(s) en base pour ' + phases.join(', '));
+  }
 }
 
 resetScores = async function() {
   if (!adminUnlocked) return;
-  if (!confirm('Reset complet du tournoi ?\n\nTous les matchs seront supprimés puis le Brassage 1 sera recréé.')) return;
+  if (!confirm('Reset complet du tournoi ?\n\nTous les matchs seront supprimés de la base, puis le Brassage 1 sera recréé.')) return;
+
   const adminMsg = document.getElementById('adminMsg');
-  if (adminMsg) adminMsg.innerText = 'Reset en cours : suppression de tous les matchs...';
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours... suppression totale des matchs en base.';
 
   try {
-    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
-    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
-    try { localStorage.removeItem(activeMatchStorageKey()); } catch(e) {}
+    try {
+      (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+      if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+      localStorage.removeItem(activeMatchStorageKey());
+    } catch(e) {}
     activeScoreMatchId = null;
 
-    await deleteAllMatches_v190();
+    await hardDeleteEveryMatch_v191();
 
-    if (adminMsg) adminMsg.innerText = 'Base nettoyée ✅ Recréation Brassage 1...';
+    if (adminMsg) adminMsg.innerText = 'Base vide ✅ création du Brassage 1...';
     const rows = generateBrassage1Rows();
     const ins = await client.from('matches').insert(rows);
     if (ins.error) throw new Error('création Brassage 1 : ' + ins.error.message);
@@ -3723,59 +3736,53 @@ resetScores = async function() {
       if (phaseFilter) phaseFilter.value = 'Brassage 1';
       renderPlanning();
     } catch(e) {}
-    if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ 36 matchs Brassage 1 créés.';
+    if (adminMsg) adminMsg.innerText = 'Reset complet OK ✅ 36 matchs Brassage 1 créés. Build ' + window.CSM_BUILD;
   } catch(e) {
     if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
     alert('Reset bloqué : ' + e.message);
   }
 };
 
-async function generateBrassage2Silent_v190() {
-  const b1Matches = (matches || []).filter(m => m.phase === 'Brassage 1' && m.team_a && m.team_b);
-  if (b1Matches.length !== 36) throw new Error('il faut 36 matchs en Brassage 1, trouvés ' + b1Matches.length);
-  const unfinished = b1Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
-  if (unfinished.length) throw new Error(unfinished.length + ' match(s) de Brassage 1 ne sont pas terminés');
-
-  const rankings = {};
-  ['A','B','C','D','E','F'].forEach(function(pool) {
-    rankings[pool] = getPhasePoolRanking('Brassage 1', pool);
-    if (rankings[pool].length !== 4) throw new Error('Poule ' + pool + ' invalide : ' + rankings[pool].length + ' équipes classées');
-  });
-
-  const b2Pools = [
-    { name:'G', court:1, source:[['A',1],['B',2],['C',3],['D',4]] },
-    { name:'H', court:2, source:[['B',1],['C',2],['D',3],['E',4]] },
-    { name:'I', court:3, source:[['C',1],['D',2],['E',3],['F',4]] },
-    { name:'J', court:4, source:[['D',1],['E',2],['F',3],['A',4]] },
-    { name:'K', court:5, source:[['E',1],['F',2],['A',3],['B',4]] },
-    { name:'L', court:6, source:[['F',1],['A',2],['B',3],['C',4]] }
-  ];
-
-  const startB2 = getBrassage2StartTime();
-  let rows = [];
-  b2Pools.forEach(function(p) {
-    const poolTeams = p.source.map(function(src) { return rankings[src[0]][src[1]-1].name; });
-    rows.push.apply(rows, generateRoundRobinRows('Brassage 2', p.name, p.court, poolTeams, startB2));
-  });
-  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), 37);
-
-  const del = await client.from('matches').delete().eq('phase', 'Brassage 2');
-  if (del.error) throw new Error('suppression ancien Brassage 2 : ' + del.error.message);
-
-  const ins = await client.from('matches').insert(rows);
-  if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
-  return rows.length;
+async function cleanPhase_v191(phases) {
+  const list = Array.isArray(phases) ? phases : [phases];
+  const sel = await client.from('matches').select('id').in('phase', list);
+  if (sel.error) throw new Error('lecture phase à nettoyer : ' + sel.error.message);
+  const ids = (sel.data || []).map(function(r){ return r.id; });
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    if (!chunk.length) continue;
+    const del = await client.from('matches').delete().in('id', chunk);
+    if (del.error) throw new Error('suppression phase ' + list.join('/') + ' : ' + del.error.message);
+  }
 }
 
-generateBrassage2Silent_v181 = generateBrassage2Silent_v190;
+// Sécurise les doubles générations de Brassage 2 : on nettoie toujours l'ancien B2 avant insertion.
+if (typeof generateBrassage2Silent_v181 === 'function') {
+  const generateBrassage2Silent_before_v191 = generateBrassage2Silent_v181;
+  generateBrassage2Silent_v181 = async function() {
+    await cleanPhase_v191('Brassage 2');
+    const result = await generateBrassage2Silent_before_v191();
+    return result;
+  };
+}
 
+// Bouton visible admin : idem, pas de double B2.
 generateBrassage2 = async function() {
   if (!adminUnlocked) return;
-  if (!confirm('Générer le Brassage 2 ?\n\nLes anciens matchs Brassage 2 seront supprimés puis recréés.')) return;
+  if (!confirm('Générer le Brassage 2 ?\n\nLes éventuels anciens matchs Brassage 2 seront supprimés puis recréés.')) return;
   const adminMsg = document.getElementById('adminMsg');
   try {
-    const count = await generateBrassage2Silent_v190();
-    if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
+    if (adminMsg) adminMsg.innerText = 'Nettoyage ancien Brassage 2...';
+    await cleanPhase_v191('Brassage 2');
+    if (typeof generateBrassage2Silent_v190 === 'function') {
+      const count = await generateBrassage2Silent_v190();
+      if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
+    } else if (typeof generateBrassage2Silent_v181 === 'function') {
+      const count = await generateBrassage2Silent_v181();
+      if (adminMsg) adminMsg.innerText = 'Brassage 2 généré ✅ ' + count + ' matchs créés.';
+    } else {
+      throw new Error('fonction de génération B2 introuvable');
+    }
     await loadData();
   } catch(e) {
     if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
@@ -3783,52 +3790,10 @@ generateBrassage2 = async function() {
   }
 };
 
-const fillRandomMissingResults_before_v190 = fillRandomMissingResults;
-fillRandomMissingResults = async function(phase) {
-  await fillRandomMissingResults_before_v190(phase);
-  if (phase === 'Brassage 1') {
-    await loadData();
-    const hasB2 = (matches || []).some(m => m.phase === 'Brassage 2' && m.team_a && m.team_b);
-    if (!hasB2 && phaseDone_v181('Brassage 1')) {
-      const adminMsg = document.getElementById('adminMsg');
-      try {
-        const count = await generateBrassage2Silent_v190();
-        if (adminMsg) adminMsg.innerText += ' Brassage 2 généré automatiquement ✅ (' + count + ' matchs).';
-        await loadData();
-      } catch(e) {
-        if (adminMsg) adminMsg.innerText += ' Génération B2 bloquée : ' + e.message;
-      }
-    }
-  }
-};
-
-const generateBrackets_before_v190 = generateBrackets;
-generateBrackets = async function() {
-  if (!adminUnlocked) return;
-  const b2Matches = (matches || []).filter(m => m.phase === 'Brassage 2' && m.team_a && m.team_b);
-  if (b2Matches.length !== 36) {
-    document.getElementById('adminMsg').innerText = 'Impossible : il faut 36 matchs en Brassage 2, trouvés ' + b2Matches.length + '.';
-    return;
-  }
-  const unfinished = b2Matches.filter(m => m.status !== 'done' || m.score_a === null || m.score_b === null);
-  if (unfinished.length > 0) {
-    document.getElementById('adminMsg').innerText = 'Impossible : ' + unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés.';
-    return;
-  }
-  if (!confirm('Générer les tableaux ?\n\nLes anciens tableaux Principal/Consolante seront supprimés.')) return;
-  const ranking = globalRanking();
-  const rows = bracketRowsFromRanking(ranking).map((r, idx) => ({
-    ...r,
-    court: r.court || ((idx % 6) + 1),
-    referee_team: null,
-    access_code: null
-  }));
-  const del = await client.from('matches').delete().in('phase', ['Tableau principal','Consolante','Tableaux']);
-  if (del.error) {
-    document.getElementById('adminMsg').innerText = 'Erreur suppression anciens tableaux : ' + del.error.message;
-    return;
-  }
-  const ins = await client.from('matches').insert(rows);
-  document.getElementById('adminMsg').innerText = ins.error ? ins.error.message : 'Tableaux générés ✅ ' + rows.length + ' matchs créés.';
-  await loadData();
-};
+// Marque visuelle discrète pour vérifier que le bon build tourne.
+setTimeout(function(){
+  try {
+    const adminMsg = document.getElementById('adminMsg');
+    if (adminMsg && !adminMsg.innerText) adminMsg.innerText = 'Build ' + window.CSM_BUILD + ' chargé.';
+  } catch(e) {}
+}, 1500);
