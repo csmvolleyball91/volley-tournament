@@ -3683,3 +3683,85 @@ fillRandomMissingResults = async function(phase) {
     }
   }
 };
+
+/* v18.2-clean - Fix génération Tableaux depuis ok.zip
+   Objectif : ne pas dépendre du DELETE Supabase/RLS.
+   On archive les anciens tableaux puis on insère les nouveaux.
+*/
+function activeMatchesForPhase_v182(phase) {
+  return (matches || []).filter(function(m) {
+    return m && m.phase === phase && !isArchivedMatch_v173y(m) && m.team_a && m.team_b;
+  });
+}
+
+async function archiveTableaux_v182() {
+  // Archive les anciens tableaux si présents. On ne fait pas DELETE car il peut être bloqué par RLS.
+  const upd = await client.from('matches').update({
+    phase: 'Archive',
+    status: 'done',
+    score_a: 0,
+    score_b: 0,
+    winner: null
+  }).in('phase', ['Tableau principal', 'Consolante']);
+  if (upd.error) throw new Error('archivage anciens tableaux : ' + upd.error.message);
+}
+
+generateBrackets = async function() {
+  if (!adminUnlocked) return;
+  const adminMsg = document.getElementById('adminMsg');
+
+  try {
+    await loadData();
+
+    const b2Matches = activeMatchesForPhase_v182('Brassage 2');
+    if (b2Matches.length !== 36) {
+      const counts = (matches || []).reduce(function(acc, m) {
+        const p = m && m.phase ? m.phase : '-';
+        acc[p] = (acc[p] || 0) + 1;
+        return acc;
+      }, {});
+      throw new Error('il faut 36 matchs actifs en Brassage 2, trouvés ' + b2Matches.length + ' (' + Object.keys(counts).map(function(k){ return k + ':' + counts[k]; }).join(', ') + ')');
+    }
+
+    const unfinished = b2Matches.filter(function(m) {
+      return m.status !== 'done' || m.score_a === null || m.score_a === undefined || m.score_b === null || m.score_b === undefined;
+    });
+    if (unfinished.length) {
+      throw new Error(unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés');
+    }
+
+    if (!confirm('Générer la phase Tableau ? Les anciens tableaux seront archivés puis recréés.')) return;
+
+    if (adminMsg) adminMsg.innerText = 'Génération tableaux en cours : archivage des anciens tableaux...';
+    await archiveTableaux_v182();
+
+    const ranking = globalRanking();
+    const rows = bracketRowsFromRanking(ranking).map(function(r, idx) {
+      return Object.assign({}, r, {
+        court: r.court || ((idx % Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6))) + 1),
+        status: 'pending',
+        score_a: 0,
+        score_b: 0,
+        winner: null,
+        referee_team: null,
+        access_code: null
+      });
+    });
+
+    const ins = await client.from('matches').insert(rows);
+    if (ins.error) throw new Error('création tableaux : ' + ins.error.message);
+
+    if (adminMsg) adminMsg.innerText = 'Tableaux générés ✅ ' + rows.length + ' matchs créés.';
+    await loadData();
+
+    try {
+      const phaseFilter = document.getElementById('phaseFilter');
+      if (phaseFilter) phaseFilter.value = 'Tableau principal';
+      if (typeof showSection === 'function') showSection('planning');
+      if (typeof renderPlanning === 'function') renderPlanning();
+    } catch(e) {}
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Impossible de générer les tableaux : ' + e.message;
+    alert('Impossible de générer les tableaux : ' + e.message);
+  }
+};
