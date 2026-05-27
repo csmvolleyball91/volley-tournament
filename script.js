@@ -3911,3 +3911,126 @@ ensureMatchChronoStarted = function(m) {
 };
 
 window.CSM_BUILD = 'v19.11-no-chrono-tableaux';
+
+/* v19.12 - tableaux: no chrono + mixed principal/consolante launch order */
+function isTimedMatch_v1912(m) {
+  if (!m) return false;
+  return String(m.phase || '') === 'Brassage 1' || String(m.phase || '') === 'Brassage 2';
+}
+
+// Un match de tableau se joue aux points, sans chrono.
+const chronoHtml_base_v1912 = chronoHtml;
+chronoHtml = function(m) {
+  if (!isTimedMatch_v1912(m)) return '';
+  return chronoHtml_base_v1912(m);
+};
+
+const maybeWarnChronoEnded_base_v1912 = maybeWarnChronoEnded;
+maybeWarnChronoEnded = function(m) {
+  if (!isTimedMatch_v1912(m)) return;
+  return maybeWarnChronoEnded_base_v1912(m);
+};
+
+const ensureMatchChronoStarted_base_v1912 = ensureMatchChronoStarted;
+ensureMatchChronoStarted = function(m) {
+  if (!isTimedMatch_v1912(m)) return '';
+  return ensureMatchChronoStarted_base_v1912(m);
+};
+
+function renderPointScoreboardNoChrono_v1912(m) {
+  const locked = !canEditMatch(m);
+  return `
+    <div class="scoreboard-full scoreboard-polish-k scoreboard-tableau-nochrono">
+      <div class="score-half team-a">
+        <div class="team-title">${m.team_a}${serviceBall(m, 'a')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', 1)"`}>+</button>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', -1)"`}>−</button>
+      </div>
+
+      <div class="center-controls center-controls-k center-controls-nochrono">
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase || ''}${m.round ? ' · ' + m.round : ''}</div>
+        <div class="mini-meta mini-meta-rule">Match en 25 points</div>
+        ${locked ? lockedMatchHtml(m) : `<button class="danger finish-btn finish-btn-k" onclick="finishMatch(${m.id})">Terminer le match</button>`}
+      </div>
+
+      <div class="score-half team-b">
+        <div class="team-title">${m.team_b}${serviceBall(m, 'b')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', 1)"`}>+</button>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', -1)"`}>−</button>
+      </div>
+    </div>
+  `;
+}
+
+const renderMatchScoreboard_base_v1912 = renderMatchScoreboard;
+renderMatchScoreboard = function(m) {
+  if (m && isBracketMatch(m) && !isDoneMatch(m)) {
+    return renderPointScoreboardNoChrono_v1912(m);
+  }
+  return renderMatchScoreboard_base_v1912(m);
+};
+
+const validateFinalScore_base_v1912 = validateFinalScore;
+validateFinalScore = function(m) {
+  const base = validateFinalScore_base_v1912(m);
+  if (base) return base;
+  if (m && isBracketMatch(m)) {
+    const a = Number(m.score_a == null ? 0 : m.score_a);
+    const b = Number(m.score_b == null ? 0 : m.score_b);
+    if (Math.max(a, b) < 25) return 'Match de tableau : le vainqueur doit atteindre 25 points.';
+  }
+  return '';
+};
+
+function bracketMixedSequence_v1912(m) {
+  const bracket = String(m && m.bracket || '').toLowerCase();
+  const phase = String(m && m.phase || '').toLowerCase();
+  const round = String(m && m.round || '').toLowerCase();
+  const order = Number(m && m.match_order || 0);
+  const isCons = bracket.includes('consolante') || phase.includes('consolante');
+  const isMain = bracket.includes('principal') || phase.includes('tableau principal');
+
+  if (isMain && round.includes('1/8')) {
+    if (order >= 1 && order <= 4) return 300 + (order - 1);       // P1 à P4
+    if (order >= 5 && order <= 8) return 306 + (order - 5);       // P5 à P8
+    return 399 + order;
+  }
+  if (isCons && round.includes('quart')) {
+    if (order >= 101 && order <= 102) return 304 + (order - 101); // C101-C102 après P1-P4
+    if (order >= 103 && order <= 104) return 310 + (order - 103); // C103-C104 après P5-P8
+    return 399 + order;
+  }
+  if (isMain && round.includes('quart')) return 400 + (order - 9);
+  if (isCons && round.includes('demi')) return 404 + (order - 105);
+  if (isMain && round.includes('demi')) return 500 + (order - 13);
+  if (isCons && round.includes('finale')) return 502;
+  if (isMain && (round.includes('3e') || round.includes('place'))) return 600;
+  if (isMain && round.includes('finale')) return 601;
+  return 900 + order;
+}
+
+function tournamentPlaySort_v1912(a, b) {
+  const pa = phasePlayOrderValue(a);
+  const pb = phasePlayOrderValue(b);
+  if (pa !== pb) return pa - pb;
+  if (isBracketMatch(a) || isBracketMatch(b)) {
+    return bracketMixedSequence_v1912(a) - bracketMixedSequence_v1912(b) ||
+      Number(a.court || 0) - Number(b.court || 0) ||
+      Number(a.id || 0) - Number(b.id || 0);
+  }
+  return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+    Number(a.court || 0) - Number(b.court || 0) ||
+    Number(a.match_order || 0) - Number(b.match_order || 0) ||
+    Number(a.id || 0) - Number(b.id || 0);
+}
+
+nextPlayableMatches = function(limit = 6) {
+  return matches
+    .filter(function(m) { return isPlayableMatch(m) && m.team_a !== 'À définir' && m.team_b !== 'À définir'; })
+    .sort(tournamentPlaySort_v1912)
+    .slice(0, limit);
+};
+
+window.CSM_BUILD = 'v19.12-no-chrono-tableaux-mix-principal-consolante';
