@@ -3885,3 +3885,102 @@ resetScores = async function() {
 
 // Recharge après installation de cette surcharge finale, car le loadData initial a pu tourner avant le filtre.
 setTimeout(function(){ loadData(); }, 50);
+
+/* v18.6 - FIX generation tableau principal 16 equipes uniquement */
+function bracketRows16FromRanking_v186(ranking) {
+  const rows = [];
+  const courtsCount = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
+  const courtFor = function(order) { return ((Number(order || 1) - 1) % courtsCount) + 1; };
+  const seedName = function(seedIndex) {
+    return ranking[seedIndex - 1] && ranking[seedIndex - 1].name ? ranking[seedIndex - 1].name : 'À définir';
+  };
+  const safeRow = function(row) {
+    const order = Number(row.match_order || rows.length + 1);
+    return Object.assign({
+      phase:'Tableau principal', bracket:'Principal', pool:null,
+      court: courtFor(order), scheduled_time: null, status: 'pending',
+      score_a: null, score_b: null, winner: null,
+      referee_team: null, access_code: null
+    }, row, { court: Number(row.court || courtFor(order)) || 1 });
+  };
+  const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
+  mainPairs.forEach(function(p, idx) {
+    rows.push(safeRow({
+      round:'1/8 finale', match_order: idx + 1,
+      team_a: seedName(p[0]), team_b: seedName(p[1]),
+      next_match_order: 9 + Math.floor(idx / 2), next_slot: idx % 2 === 0 ? 'A' : 'B'
+    }));
+  });
+  for (let i = 0; i < 4; i++) rows.push(safeRow({
+    round:'Quart', match_order: 9 + i,
+    team_a:'À définir', team_b:'À définir',
+    next_match_order: 13 + Math.floor(i / 2), next_slot: i % 2 === 0 ? 'A' : 'B'
+  }));
+  for (let i = 0; i < 2; i++) rows.push(safeRow({
+    round:'Demi', match_order: 13 + i,
+    team_a:'À définir', team_b:'À définir',
+    next_match_order: 15, next_slot: i === 0 ? 'A' : 'B',
+    loser_next_match_order: 16, loser_next_slot: i === 0 ? 'A' : 'B'
+  }));
+  rows.push(safeRow({ round:'Finale', match_order: 15, team_a:'À définir', team_b:'À définir' }));
+  rows.push(safeRow({ round:'3e place', match_order: 16, team_a:'À définir', team_b:'À définir' }));
+  return rows;
+}
+
+async function archiveExistingBrackets_v186() {
+  const upd = await client.from('matches').update({
+    phase: 'Archive', status: 'archived', score_a: 0, score_b: 0, winner: null
+  }).in('phase', ['Tableau principal','Consolante']);
+  if (upd.error) throw new Error('archivage anciens tableaux : ' + upd.error.message);
+}
+
+generateBrackets = async function() {
+  if (!adminUnlocked) return;
+  const adminMsg = document.getElementById('adminMsg');
+
+  const active = typeof activeMatchesOnly_v185 === 'function' ? activeMatchesOnly_v185(matches || []) : (matches || []);
+  const b2Matches = active.filter(function(m){ return m.phase === 'Brassage 2' && m.team_a && m.team_b; });
+
+  if (b2Matches.length !== 36) {
+    const msg = 'Impossible : il faut 36 matchs actifs en Brassage 2, trouvés ' + b2Matches.length + '. Génère/termine d’abord Brassage 2.';
+    if (adminMsg) adminMsg.innerText = msg;
+    alert(msg);
+    return;
+  }
+  const unfinished = b2Matches.filter(function(m){ return m.status !== 'done' || m.score_a === null || m.score_b === null; });
+  if (unfinished.length > 0) {
+    const msg = 'Impossible : ' + unfinished.length + ' match(s) de Brassage 2 ne sont pas terminés.';
+    if (adminMsg) adminMsg.innerText = msg;
+    alert(msg);
+    return;
+  }
+  if (!confirm('Générer le tableau final ?\n\nSeules les 16 premières équipes seront intégrées. Les anciens tableaux seront archivés.')) return;
+
+  try {
+    await archiveExistingBrackets_v186();
+    const ranking = globalRanking().slice(0, 16);
+    const rows = bracketRows16FromRanking_v186(ranking);
+    const ins = await client.from('matches').insert(rows);
+    if (ins.error) throw new Error('création tableau : ' + ins.error.message);
+    if (adminMsg) adminMsg.innerText = 'Tableau final généré ✅ 16 équipes / ' + rows.length + ' matchs créés.';
+    await loadData();
+    try { showSection('public'); } catch(e) {}
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Impossible de générer le tableau : ' + e.message;
+    alert('Impossible de générer le tableau : ' + e.message);
+  }
+};
+
+// Vue organisateur : ne montre plus les archives ni la consolante pour le tableau final demandé.
+const renderBrackets_base_v186 = renderBrackets;
+renderBrackets = function() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return renderBrackets_base_v186 ? renderBrackets_base_v186() : null;
+  const active = typeof activeMatchesOnly_v185 === 'function' ? activeMatchesOnly_v185(matches || []) : (matches || []);
+  const ranking = globalRanking();
+  rankDiv.innerHTML = '<section class="global-ranking-card"><div class="ranking-phase-title"><span>Classement tableaux</span><small>Top 16 qualifiés</small></div><div class="table-scroll"><table class="ranking-table global-ranking-table"><tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>' + ranking.map(function(r,i){ return '<tr class="rank-row ' + (i < 16 ? 'rank-highlight' : '') + '"><td><span class="rank-badge">' + (i+1) + '</span></td><td class="team-cell"><b>' + r.name + '</b></td><td>' + r.b1Score + '</td><td class="score-cell">' + r.b2Score + '</td></tr>'; }).join('') + '</table></div></section>';
+  const bracketMatches = active.filter(function(m){ return m.phase === 'Tableau principal' && m.bracket === 'Principal'; }).sort(function(a,b){ return Number(a.match_order || 0) - Number(b.match_order || 0); });
+  if (!bracketMatches.length) { bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>'; return; }
+  bracketDiv.innerHTML = '<div class="table-scroll"><table class="ranking-table"><tr><th>Ordre</th><th>Tour</th><th>Terrain</th><th>Équipe A</th><th>Score</th><th>Équipe B</th><th>Statut</th></tr>' + bracketMatches.map(function(m){ return '<tr><td>' + (m.match_order || '') + '</td><td>' + (m.round || '') + '</td><td>T' + (m.court || '-') + '</td><td><b>' + (m.team_a || 'À définir') + '</b></td><td>' + scoreText(m) + '</td><td><b>' + (m.team_b || 'À définir') + '</b></td><td>' + statusText(m) + '</td></tr>'; }).join('') + '</table></div>';
+};
