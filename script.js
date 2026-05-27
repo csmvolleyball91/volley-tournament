@@ -3763,3 +3763,125 @@ fillRandomMissingResults = async function(phase) {
     }
   }
 };
+
+/* v18.5 - FIX DEFINITIF archives + écran public tableau
+   Problèmes corrigés :
+   1) le script appelait loadData() avant la surcharge qui filtre les archives ;
+   2) l'écran public n'affichait le bracket que si currentPhaseName contenait 'tableau' ;
+   3) certains écrans pouvaient encore utiliser des lignes archivées si le refresh arrivait trop tôt.
+*/
+function isArchivedMatch_v185(m) {
+  if (!m) return true;
+  const phase = String(m.phase || '').toLowerCase().trim();
+  const status = String(m.status || '').toLowerCase().trim();
+  return phase === 'archive' || phase === '__archive__' || phase.indexOf('archive') !== -1 ||
+    status === 'archived' || status === 'reset_archived' || status === 'archive';
+}
+
+function activeMatchesOnly_v185(list) {
+  return (list || []).filter(function(m) { return !isArchivedMatch_v185(m); });
+}
+
+// Surcharge finale : toutes les vues de l'app travaillent désormais uniquement sur les matchs actifs.
+loadData = async function() {
+  const { data: s, error: se } = await client.from('settings').select('*').eq('id', 1).single();
+  if (se) alert('Erreur settings: ' + se.message);
+  settings = s;
+
+  const { data: t, error: te } = await client.from('teams').select('*').order('id');
+  if (te) alert('Erreur teams: ' + te.message);
+  teams = t || [];
+
+  const { data: m, error: me } = await client.from('matches').select('*').order('scheduled_time').order('court').order('match_order');
+  if (me) alert('Erreur matches: ' + me.message);
+  matches = activeMatchesOnly_v185(m || []);
+
+  renderAll();
+  if (typeof ensureVisibleSection === 'function') ensureVisibleSection();
+};
+
+function hasActivePublicBracket_v185() {
+  return activeMatchesOnly_v185(matches || []).some(function(m) {
+    return m.phase === 'Tableau principal' && m.bracket === 'Principal' && Number(m.match_order || 0) >= 1 && Number(m.match_order || 0) <= 16;
+  });
+}
+
+// Remplace uniquement le début de décision de l'écran public : si un tableau actif existe, on l'affiche.
+const renderPublicView_v184 = renderPublicView;
+renderPublicView = function() {
+  const div = document.getElementById('publicViewContent');
+  if (!div) return;
+
+  const now = new Date();
+  const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const phase = currentPhaseName ? currentPhaseName() : (settings && settings.current_phase ? settings.current_phase : 'Tournoi');
+  const phaseEta = estimatedPhaseEnd(phase);
+  const phaseEtaLabel = phaseEta ? ('Fin phase estimée : ' + phaseEta) : 'Fin phase estimée : à confirmer';
+
+  if (hasActivePublicBracket_v185() && typeof renderPublicBracketScreen === 'function') {
+    div.innerHTML = renderPublicBracketScreen(clock, 'Tableau final', phaseEtaLabel);
+    return;
+  }
+  return renderPublicView_v184();
+};
+
+// Reset complet renforcé : archive tout, vérifie, puis recrée uniquement B1.
+async function archiveAllMatchesForReset_v185() {
+  const upd = await client.from('matches').update({
+    phase: 'Archive',
+    status: 'archived',
+    score_a: 0,
+    score_b: 0,
+    winner: null
+  }).neq('id', 0);
+  if (upd.error) throw new Error('archivage des anciens matchs : ' + upd.error.message);
+
+  const check = await client.from('matches').select('id, phase, status, team_a, team_b').not('phase','eq','Archive').limit(10);
+  if (check.error) throw new Error('vérification archivage : ' + check.error.message);
+  const remaining = activeMatchesOnly_v185(check.data || []);
+  if (remaining.length) {
+    const sample = remaining.map(function(m){ return '#' + m.id + ' ' + (m.phase || '-') + ' ' + (m.team_a || '?') + ' vs ' + (m.team_b || '?'); }).join(' / ');
+    throw new Error('des matchs actifs restent visibles après archivage : ' + sample);
+  }
+}
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nLes anciens matchs seront archivés, les chronos/reprises purgés, puis Brassage 1 sera recréé seul.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  if (adminMsg) adminMsg.innerText = 'Reset complet en cours : archivage des anciens matchs...';
+
+  try {
+    (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+    if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+  } catch(e) {}
+  activeScoreMatchId = null;
+
+  try {
+    await archiveAllMatchesForReset_v185();
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message + '\n\nJe ne recrée pas Brassage 1 par-dessus pour éviter les doublons.');
+    return;
+  }
+
+  if (adminMsg) adminMsg.innerText = 'Anciens matchs archivés ✅ Recréation Brassage 1...';
+  const rows = generateBrassage1Rows();
+  const ins = await client.from('matches').insert(rows);
+  if (ins.error) {
+    if (adminMsg) adminMsg.innerText = 'Erreur régénération Brassage 1 : ' + ins.error.message;
+    alert('Erreur régénération Brassage 1 : ' + ins.error.message);
+    return;
+  }
+
+  await loadData();
+  try {
+    const phaseFilter = document.getElementById('phaseFilter');
+    if (phaseFilter) phaseFilter.value = 'Brassage 1';
+    renderPlanning();
+  } catch(e) {}
+  if (adminMsg) adminMsg.innerText = 'Reset complet effectué ✅ Archives masquées, seul Brassage 1 est actif.';
+};
+
+// Recharge après installation de cette surcharge finale, car le loadData initial a pu tourner avant le filtre.
+setTimeout(function(){ loadData(); }, 50);
