@@ -4751,3 +4751,103 @@ openLiveMatch = function(id) {
 };
 
 setTimeout(showBuildMarker_v1920, 300);
+
+/* v19.21 - verrou terrain réel côté base : impossible de lancer un match sur un terrain déjà en cours */
+window.CSM_BUILD = 'v19.21-terrain-lock-db';
+
+async function fetchLiveMatchOnCourt_v1921(court, exceptId) {
+  if (!court) return null;
+  try {
+    const res = await client
+      .from('matches')
+      .select('id, phase, court, team_a, team_b, status')
+      .eq('court', Number(court))
+      .eq('status', 'live')
+      .neq('id', exceptId)
+      .limit(1);
+    if (res && !res.error && res.data && res.data.length) return res.data[0];
+  } catch(e) {}
+  return null;
+}
+
+const launchMatch_before_v1921 = launchMatch;
+launchMatch = async function(id) {
+  let m = await fetchFreshMatch_v1920(id);
+  if (!m) return;
+
+  if (isDoneMatch(m)) {
+    alert('Ce match est déjà terminé. Utilise l’admin si tu dois le corriger.');
+    await loadData();
+    return;
+  }
+
+  if (isLiveMatchStatus(m)) {
+    if (hasLocalMatchSession(m.id)) {
+      activeScoreMatchId = m.id;
+      renderScoreSection();
+      return;
+    }
+    alert('Ce match est déjà en cours sur un autre appareil.\n\nPour le libérer, il faut passer par Admin > Reset match sécurisé.');
+    await loadData();
+    return;
+  }
+
+  // Vérification serveur, pas seulement la liste locale : bloque vraiment un terrain déjà occupé.
+  const courtBusy = await fetchLiveMatchOnCourt_v1921(m.court, m.id);
+  if (courtBusy) {
+    alert('Terrain ' + (m.court || '-') + ' déjà en cours : ' + courtBusy.team_a + ' vs ' + courtBusy.team_b + '.\n\nTermine ce match ou utilise Admin > Reset match sécurisé avant d’en lancer un autre sur ce terrain.');
+    await loadData();
+    return;
+  }
+
+  const code = askRefCodeForMatch(m);
+  if (!code) return;
+
+  // Re-vérification juste avant l’UPDATE pour éviter le double-clic ou 2 appareils simultanés.
+  const courtBusyAfterCode = await fetchLiveMatchOnCourt_v1921(m.court, m.id);
+  if (courtBusyAfterCode) {
+    alert('Terrain ' + (m.court || '-') + ' vient d’être pris par : ' + courtBusyAfterCode.team_a + ' vs ' + courtBusyAfterCode.team_b + '.');
+    await loadData();
+    return;
+  }
+
+  const update = { status: 'live' };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(code);
+    if (refTeam) update.referee_team = refTeam;
+  }
+
+  const result = await client
+    .from('matches')
+    .update(update)
+    .eq('id', id)
+    .neq('status', 'live')
+    .neq('status', 'done')
+    .select('id,status')
+    .maybeSingle();
+
+  if (result.error) {
+    alert('Erreur lancement match : ' + result.error.message);
+    await loadData();
+    return;
+  }
+
+  if (!result.data) {
+    alert('Ce match vient d’être pris par un autre appareil.\n\nActualisation de la liste.');
+    await loadData();
+    return;
+  }
+
+  setLocalMatchSession(id, code);
+  activeScoreMatchId = id;
+  await loadData();
+};
+
+setTimeout(function(){
+  try {
+    const adminMsg = document.getElementById('adminMsg');
+    if (adminMsg && (!adminMsg.innerText || adminMsg.innerText.indexOf('Build') === 0)) {
+      adminMsg.innerText = 'Build ' + window.CSM_BUILD + ' chargé.';
+    }
+  } catch(e) {}
+}, 500);
