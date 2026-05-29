@@ -4643,3 +4643,111 @@ renderMatchScoreboard = function(m) {
 };
 
 setTimeout(function(){ setActiveNavButton_v1919(currentSection || 'teams'); }, 500);
+
+/* v19.20 - verrouillage serveur réel + build marker */
+const BUILD_VERSION_V1920 = 'v19.20-lock-server';
+
+function showBuildMarker_v1920() {
+  try {
+    const el = document.querySelector('#buildVersion, .build-version, [data-build-version]');
+    if (el) el.textContent = BUILD_VERSION_V1920;
+  } catch(e) {}
+}
+
+async function fetchFreshMatch_v1920(id) {
+  try {
+    const res = await client.from('matches').select('*').eq('id', id).single();
+    if (res && !res.error && res.data) return res.data;
+  } catch(e) {}
+  return matches.find(function(x) { return String(x.id) === String(id); }) || null;
+}
+
+// Verrouillage strict réellement multi-appareils :
+// même si un autre téléphone a une liste non rafraîchie, l'UPDATE ne passe que si le match n'est pas déjà live/done en base.
+launchMatch = async function(id) {
+  let m = await fetchFreshMatch_v1920(id);
+  if (!m) return;
+
+  if (isDoneMatch(m)) {
+    alert('Ce match est déjà terminé. Utilise l’admin si tu dois le corriger.');
+    await loadData();
+    return;
+  }
+
+  if (isLiveMatchStatus(m)) {
+    if (hasLocalMatchSession(m.id)) {
+      activeScoreMatchId = m.id;
+      renderScoreSection();
+      return;
+    }
+    alert('Ce match est déjà en cours sur un autre appareil.\n\nPour le libérer, il faut passer par Admin > Reset match sécurisé.');
+    await loadData();
+    return;
+  }
+
+  const freshOtherLive = matches.find(function(x) {
+    return Number(x.court) === Number(m.court) && String(x.id) !== String(m.id) && x.team_a && x.team_b && isLiveMatchStatus(x);
+  });
+  if (freshOtherLive) {
+    alert('Terrain ' + (m.court || '-') + ' déjà occupé par : ' + freshOtherLive.team_a + ' vs ' + freshOtherLive.team_b + '.\n\nTermine ce match ou utilise Admin > Reset match sécurisé.');
+    await loadData();
+    return;
+  }
+
+  const code = askRefCodeForMatch(m);
+  if (!code) return;
+
+  const update = { status: 'live' };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(code);
+    if (refTeam) update.referee_team = refTeam;
+  }
+
+  const result = await client
+    .from('matches')
+    .update(update)
+    .eq('id', id)
+    .neq('status', 'live')
+    .neq('status', 'done')
+    .select('id,status')
+    .maybeSingle();
+
+  if (result.error) {
+    alert('Erreur lancement match : ' + result.error.message);
+    await loadData();
+    return;
+  }
+
+  if (!result.data) {
+    alert('Ce match vient d’être pris par un autre appareil.\n\nActualisation de la liste.');
+    await loadData();
+    return;
+  }
+
+  setLocalMatchSession(id, code);
+  activeScoreMatchId = id;
+  await loadData();
+};
+
+openLiveMatch = function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+  if (isDoneMatch(m)) {
+    alert('Ce match est terminé. Utilise l’admin si tu dois le corriger.');
+    return;
+  }
+  if (isLiveMatchStatus(m) && !hasLocalMatchSession(m.id)) {
+    alert('Ce match est déjà en cours sur un autre appareil.\n\nPour le libérer, il faut passer par Admin > Reset match sécurisé.');
+    loadData();
+    return;
+  }
+  if (!canEditMatch(m)) {
+    const code = askRefCodeForMatch(m);
+    if (!code) return;
+    setLocalMatchSession(m.id, code);
+  }
+  activeScoreMatchId = m.id;
+  renderScoreSection();
+};
+
+setTimeout(showBuildMarker_v1920, 300);

@@ -3019,3 +3019,18 @@ th,
     min-width: 0 !important;
   }
 }
+
+/* v19.20 - onglet actif inversé jaune/bleu, plus visible */
+.nav-grid button.nav-active {
+  background: var(--club-yellow, #ffd21f) !important;
+  color: var(--club-blue, #073b7a) !important;
+  font-weight: 900 !important;
+  box-shadow: 0 10px 22px rgba(255, 210, 31, .32) !important;
+  transform: translateY(-1px);
+}
+.nav-grid button.nav-active::after {
+  background: var(--club-blue, #073b7a) !important;
+  height: 5px !important;
+  left: 16px !important;
+  right: 16px !important;
+}
