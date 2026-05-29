@@ -5562,3 +5562,73 @@ console.log(window.CSM_BUILD);
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.17 - Fix définitif classement %V / ratio
+   Le patch v19.18 avait réassigné poolStats avec l'ancien système score/diff.
+   On force ici la version ratio en fin de fichier pour écraser tous les anciens overrides.
+*/
+(function(){
+  function statEmptyV2017(){
+    return { mj:0, v:0, d:0, pm:0, pe:0, diff:0, winPct:0, ratio:0, score:0 };
+  }
+  function finalizeStatsV2017(s){
+    s.winPct = s.mj ? s.v / s.mj : 0;
+    s.ratio = s.pe > 0 ? s.pm / s.pe : (s.pm > 0 ? 999 : 0);
+    s.score = Math.round(s.winPct * 1000000) + Math.round(s.ratio * 1000) + s.pm;
+    return s;
+  }
+  function completedMatchV2017(m){
+    return m && m.status === 'done' && m.score_a !== null && m.score_a !== undefined && m.score_b !== null && m.score_b !== undefined;
+  }
+  window.fmtRatio = function(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  };
+  window.poolStats = poolStats = function(phase, pool) {
+    const teamNames = new Set();
+    matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
+      if (m.team_a && m.team_a !== 'À définir') teamNames.add(m.team_a);
+      if (m.team_b && m.team_b !== 'À définir') teamNames.add(m.team_b);
+    });
+    const stats = {};
+    [...teamNames].forEach(name => stats[name] = statEmptyV2017());
+    matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
+      if (!completedMatchV2017(m)) return;
+      if (!stats[m.team_a] || !stats[m.team_b]) return;
+      const a = Number(m.score_a);
+      const b = Number(m.score_b);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+      stats[m.team_a].mj++; stats[m.team_b].mj++;
+      stats[m.team_a].pm += a; stats[m.team_a].pe += b; stats[m.team_a].diff += a - b;
+      stats[m.team_b].pm += b; stats[m.team_b].pe += a; stats[m.team_b].diff += b - a;
+      if (a > b) { stats[m.team_a].v++; stats[m.team_b].d++; }
+      else if (b > a) { stats[m.team_b].v++; stats[m.team_a].d++; }
+    });
+    Object.values(stats).forEach(finalizeStatsV2017);
+    return Object.entries(stats).sort((a,b) => {
+      const sa = a[1] || statEmptyV2017();
+      const sb = b[1] || statEmptyV2017();
+      return (sb.winPct - sa.winPct) || (sb.ratio - sa.ratio) || (sb.pm - sa.pm) || (sb.diff - sa.diff) || String(a[0]).localeCompare(String(b[0]));
+    });
+  };
+  window.aggregatePhaseStats = aggregatePhaseStats = function(phase) {
+    const stats = {};
+    activeTeams().forEach(t => stats[t.name] = statEmptyV2017());
+    matches.filter(m => m.phase === phase).forEach(m => {
+      if (!completedMatchV2017(m)) return;
+      if (!stats[m.team_a]) stats[m.team_a] = statEmptyV2017();
+      if (!stats[m.team_b]) stats[m.team_b] = statEmptyV2017();
+      const a = Number(m.score_a);
+      const b = Number(m.score_b);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+      stats[m.team_a].mj++; stats[m.team_b].mj++;
+      stats[m.team_a].pm += a; stats[m.team_a].pe += b; stats[m.team_a].diff += a - b;
+      stats[m.team_b].pm += b; stats[m.team_b].pe += a; stats[m.team_b].diff += b - a;
+      if (a > b) { stats[m.team_a].v++; stats[m.team_b].d++; }
+      else if (b > a) { stats[m.team_b].v++; stats[m.team_a].d++; }
+    });
+    Object.values(stats).forEach(finalizeStatsV2017);
+    return stats;
+  };
+  window.CSM_BUILD = 'v20.17-classement-ratio-fix';
+})();
