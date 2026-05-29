@@ -3043,13 +3043,3 @@ th,
 .team-cell b,.ranking-podium-item strong,.match-team-name,.team-name,.score-team-name{overflow-wrap:anywhere;word-break:break-word;line-height:1.05;}
 .admin-warning{padding:10px 12px;border-radius:12px;background:#fff3cd;color:#5f4300;font-weight:700;margin-bottom:10px;}
 @media(max-width:700px){.team-edit-level{grid-template-columns:54px 1fr 88px}.team-level-badge{font-size:.58em;padding:1px 5px;margin-left:3px}.ranking-table th,.ranking-table td{font-size:11px}.team-cell b{font-size:12px}}
-
-/* v20.10 - les niveaux restent sur les équipes, jamais sur les arbitres */
-.public-callout em .team-level-badge,
-.public-ref .team-level-badge,
-.public-next em .team-level-badge,
-.launch-referee .team-level-badge,
-.locked-box .team-level-badge,
-.admin-correction-sub .team-level-badge {
-  display: none !important;
-}
