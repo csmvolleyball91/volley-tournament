@@ -1,4 +1,3 @@
-const BUILD_V20 = 'v20.12';
 
 function escapeHtml(str) {
   return String(str ?? '')
@@ -170,6 +169,42 @@ let matches = [];
 let settings = null;
 let currentSection = null;
 let adminUnlocked = false;
+
+function requestAdminAccess() {
+  const panel = document.getElementById('adminPanel');
+  const msg = document.getElementById('adminMsg');
+  if (adminUnlocked) {
+    if (panel) panel.classList.remove('hidden');
+    if (msg) msg.innerHTML = 'Admin déverrouillé ✅';
+    if (typeof renderAdmin === 'function') renderAdmin();
+    return;
+  }
+  const code = prompt('Code admin');
+  if (code === 'keke') {
+    adminUnlocked = true;
+    try { localStorage.setItem('volley_admin_unlocked', '1'); } catch(e) {}
+    if (panel) panel.classList.remove('hidden');
+    if (msg) msg.innerHTML = 'Admin déverrouillé ✅';
+    if (typeof renderAll === 'function') renderAll();
+  } else if (code !== null) {
+    if (msg) msg.innerHTML = 'Code admin incorrect ❌';
+    alert('Code admin incorrect');
+  }
+}
+window.requestAdminAccess = requestAdminAccess;
+
+function restoreAdminAccessIfNeeded() {
+  try {
+    if (localStorage.getItem('volley_admin_unlocked') === '1') {
+      adminUnlocked = true;
+      const panel = document.getElementById('adminPanel');
+      const msg = document.getElementById('adminMsg');
+      if (panel) panel.classList.remove('hidden');
+      if (msg) msg.innerHTML = 'Admin déverrouillé ✅';
+    }
+  } catch(e) {}
+}
+
 let activeScoreMatchId = null;
 let matchEditCodes = {};
 
@@ -230,6 +265,15 @@ function show(id) {
   const dash = document.getElementById('homeDashboard');
   if (dash && id === 'teams') dash.classList.remove('hidden');
   currentSection = id;
+  if (id === 'admin') {
+    restoreAdminAccessIfNeeded();
+    if (!adminUnlocked) {
+      const panel = document.getElementById('adminPanel');
+      const msg = document.getElementById('adminMsg');
+      if (panel) panel.classList.add('hidden');
+      if (msg) msg.innerHTML = '<button onclick="requestAdminAccess()">Déverrouiller admin</button>';
+    }
+  }
   renderAll();
   ensureVisibleSection();
 }
@@ -909,7 +953,8 @@ function renderPlanning() {
   list.sort((a,b)=>computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || Number(a.court)-Number(b.court) || (a.id||0)-(b.id||0));
   div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamPlainDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
 }
-console.log(BUILD_V20);
+window.CSM_BUILD = window.CSM_BUILD || 'v20.13-reference-fix';
+console.log(window.CSM_BUILD);
 
 /* v20.4 - niveaux visibles dans Tableaux + Écran public */
 function renderBrackets() {
@@ -1335,3 +1380,8 @@ function teamPlainDisplay(name){
   if (typeof escapeHtml === 'function') return escapeHtml(clean);
   return String(clean || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
 }
+
+
+/* v20.13 - reference fixes */
+window.CSM_BUILD = 'v20.13-reference-fixes-2026-05-29';
+console.log(window.CSM_BUILD);
