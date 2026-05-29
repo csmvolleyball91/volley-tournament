@@ -5877,3 +5877,58 @@ console.log(window.CSM_BUILD);
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.22 - Fix Classement tableaux: scores B1/B2 affichés correctement même avant B2 */
+(function(){
+  window.CSM_BUILD = 'v20.22-fix-classement-tableaux-display';
+
+  function csmPct2022(v){ return Math.round((Number(v) || 0) * 100); }
+  function csmRat2022(v){ return Math.round((Number(v) || 0) * 100); }
+  function csmFmtRatio2022(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  }
+  function csmFmtScore2022(winPct, ratio, mj){
+    const games = Number(mj || 0);
+    if (!games) return '-';
+    return `${csmPct2022(winPct)}% · R${csmFmtRatio2022(ratio)}`;
+  }
+
+  window.globalRanking = globalRanking = function(){
+    const b2 = aggregatePhaseStats('Brassage 2');
+    const b1 = aggregatePhaseStats('Brassage 1');
+    const active = (typeof activeTeams === 'function' ? activeTeams() : (teams || []));
+
+    return active.map(t => {
+      const s2 = b2[t.name] || {};
+      const s1 = b1[t.name] || {};
+      return {
+        name: t.name,
+        b2WinPct: Number(s2.winPct || 0),
+        b2Ratio: Number(s2.ratio || 0),
+        b2Pm: Number(s2.pm || 0),
+        b2Mj: Number(s2.mj || 0),
+        b1WinPct: Number(s1.winPct || 0),
+        b1Ratio: Number(s1.ratio || 0),
+        b1Pm: Number(s1.pm || 0),
+        b1Mj: Number(s1.mj || 0)
+      };
+    }).sort((a,b) =>
+      (csmPct2022(b.b2WinPct) - csmPct2022(a.b2WinPct)) ||
+      (csmRat2022(b.b2Ratio) - csmRat2022(a.b2Ratio)) ||
+      ((Number(b.b2Pm)||0) - (Number(a.b2Pm)||0)) ||
+      (csmPct2022(b.b1WinPct) - csmPct2022(a.b1WinPct)) ||
+      (csmRat2022(b.b1Ratio) - csmRat2022(a.b1Ratio)) ||
+      ((Number(b.b1Pm)||0) - (Number(a.b1Pm)||0)) ||
+      ((typeof teamNumberFromName === 'function' ? teamNumberFromName(a.name) : 0) - (typeof teamNumberFromName === 'function' ? teamNumberFromName(b.name) : 0)) ||
+      String(a.name).localeCompare(String(b.name))
+    ).map((r,idx) => ({
+      ...r,
+      rank: idx + 1,
+      b2Score: csmFmtScore2022(r.b2WinPct, r.b2Ratio, r.b2Mj),
+      b1Score: csmFmtScore2022(r.b1WinPct, r.b1Ratio, r.b1Mj)
+    }));
+  };
+
+  console.log(window.CSM_BUILD);
+})();
