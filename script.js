@@ -5165,3 +5165,141 @@ function renderPlanning() {
   div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
 }
 console.log(BUILD_V20);
+
+/* v20.3 - niveaux visibles dans Tableaux + Écran public */
+function renderBrackets() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return;
+
+  const ranking = globalRanking();
+  const topSeeds = ranking.slice(0,3).map((r,i) => `
+    <div class="global-top-card rank-${i+1}">
+      <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+      <strong>${teamDisplay(r.name)}</strong>
+      <small>B2 ${r.b2Score} · B1 ${r.b1Score}</small>
+    </div>
+  `).join('');
+  rankDiv.innerHTML = `<section class="global-ranking-card">
+    <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+    <div class="global-top3">${topSeeds}</div>
+    <div class="table-scroll"><table class="ranking-table global-ranking-table">
+      <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${teamDisplay(r.name)}</b></td><td>${r.b1Score}</td><td class="score-cell">${r.b2Score}</td></tr>`).join('')}
+    </table></div>
+  </section>`;
+
+  const bracketMatches = matches.filter(m => m.bracket).sort((a,b) =>
+    (a.bracket || '').localeCompare(b.bracket || '') ||
+    (a.match_order || 0) - (b.match_order || 0)
+  );
+
+  if (!bracketMatches.length) {
+    bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+    return;
+  }
+
+  const groups = {};
+  bracketMatches.forEach(m => {
+    const key = `${m.bracket} — ${m.round}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(m);
+  });
+
+  bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
+    <div class="bracket-title">${escapeHtml(title)}</div>
+    ${list.map(m => `<div class="card">
+      <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${computedScheduledTime(m) || 'Horaire à définir'}</span><br>
+      <b>${teamDisplay(m.team_a || 'À définir')}</b> vs <b>${teamDisplay(m.team_b || 'À définir')}</b><br>
+      Gagnant : ${m.winner ? teamDisplay(m.winner) : '-'} · ${statusText(m)}
+    </div>`).join('')}
+  `).join('');
+}
+
+function renderPublicView() {
+  const div = document.getElementById('publicViewContent');
+  if (!div) return;
+
+  const now = new Date();
+  const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const phase = currentPhaseName ? currentPhaseName() : (settings && settings.current_phase ? settings.current_phase : 'Tournoi');
+  const phaseEta = estimatedPhaseEnd(phase);
+  const phaseEtaLabel = phaseEta ? ('Fin phase estimée : ' + phaseEta) : 'Fin phase estimée : à confirmer';
+
+  const maxCourts = settings && settings.courts_count ? Number(settings.courts_count) : 6;
+  const courts = [];
+  for (let i = 1; i <= maxCourts; i++) courts.push(i);
+
+  const playable = matches
+    .filter(function(m) { return m.team_a && m.team_b && String(m.team_a).indexOf('À définir') === -1 && String(m.team_b).indexOf('À définir') === -1 && m.status !== 'done'; })
+    .sort(function(a, b) {
+      return Number(a.court || 999) - Number(b.court || 999) ||
+        (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') ||
+        (a.id || 0) - (b.id || 0);
+    });
+
+  const nextToLaunchByCourt = courts
+    .map(function(c) {
+      return playable.find(function(m) { return Number(m.court) === Number(c) && !isPublicMatchLive(m); });
+    })
+    .filter(Boolean);
+
+  const firstCall = nextToLaunchByCourt[0];
+  const freeCourts = courts.filter(function(c) {
+    return !playable.some(function(m) { return Number(m.court) === Number(c) && isPublicMatchLive(m); });
+  });
+
+  const callout = firstCall
+    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + teamDisplay(firstCall.team_a) + ' vs ' + teamDisplay(firstCall.team_b) + '</b><em>Arbitre attendu : ' + (firstCall.referee_team ? teamDisplay(firstCall.referee_team) : 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
+    : (freeCourts.length
+      ? '<div class="public-callout is-calm"><span>✅ Terrains disponibles</span><b>' + freeCourts.map(function(c){ return 'T' + c; }).join(' · ') + '</b><em>En attente de la prochaine rotation</em></div>'
+      : '<div class="public-callout is-calm"><span>✅ Tous les matchs sont lancés</span><b>Matchs en cours</b><em>Prochaine rotation à confirmer</em></div>');
+
+  const cards = courts.map(function(c) {
+    const courtMatches = playable.filter(function(m) { return Number(m.court) === Number(c); });
+    const liveMatch = courtMatches.find(isPublicMatchLive);
+    const current = liveMatch || courtMatches[0];
+    const next = courtMatches.find(function(m) { return current && m.id !== current.id && !isPublicMatchLive(m); });
+    const isLive = !!liveMatch;
+    const statusTextPublic = isLive ? 'EN COURS' : (current ? 'À LANCER' : 'TERRAIN LIBRE');
+    const statusClass = isLive ? 'is-live' : (current ? 'is-next' : 'is-free');
+
+    let body = '';
+    if (current) {
+      const hasScore = current.score_a != null || current.score_b != null;
+      const scoreA = current.score_a == null ? 0 : current.score_a;
+      const scoreB = current.score_b == null ? 0 : current.score_b;
+      body += '<div class="public-main-match">' +
+        '<div class="public-team public-team-a">' + teamDisplay(current.team_a) + '</div>' +
+        '<div class="public-vs">vs</div>' +
+        '<div class="public-team public-team-b">' + teamDisplay(current.team_b) + '</div>' +
+      '</div>';
+      body += hasScore || isLive
+        ? '<div class="public-scoreline premium"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>'
+        : '<div class="public-waiting">Match à lancer</div>';
+      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team ? teamDisplay(current.referee_team) : 'libre') + '</div>';
+    } else {
+      body += '<div class="public-free-panel"><b>Terrain disponible</b><span>Aucun match en attente</span></div>';
+    }
+
+    const nextHtml = next
+      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + teamDisplay(next.team_a) + ' vs ' + teamDisplay(next.team_b) + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + teamDisplay(next.referee_team) : '') + '</em></div>'
+      : '<div class="public-next premium-next is-empty"><span>À suivre</span><b>—</b><em>Aucun match programmé</em></div>';
+
+    return '<div class="public-court-card premium-tv-card ' + statusClass + '">' +
+      '<div class="public-court-top premium-court-top"><div><div class="public-court-title">Terrain ' + c + '</div><div class="public-court-subtitle">' + (current && computedScheduledTime(current) ? computedScheduledTime(current) : 'Rotation suivante') + '</div></div><div class="status-pill ' + statusClass + '">' + statusTextPublic + '</div></div>' +
+      body + nextHtml +
+    '</div>';
+  }).join('');
+
+  div.innerHTML = '<div class="public-tv premium-tv-screen">' +
+    '<div class="public-tv-header premium-tv-header">' +
+      '<div class="public-brand-block"><img src="club-logo.png" alt="CSM" class="public-logo"><div><div class="public-tv-title">Tournoi CSM Volleyball 91</div><div class="public-tv-subtitle">' + escapeHtml(phase) + ' · ' + escapeHtml(phaseEtaLabel) + '</div></div></div>' +
+      '<div class="public-clock premium-clock">' + escapeHtml(clock) + '</div>' +
+    '</div>' +
+    callout +
+    '<div class="public-courts premium-public-courts">' + cards + '</div>' +
+  '</div>';
+}
+window.CSM_BUILD = 'v20.3-niveaux-tableaux-public';
+console.log(window.CSM_BUILD);
