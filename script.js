@@ -1100,6 +1100,26 @@ function ensureAdminPriorityTools() {
   panel.insertAdjacentHTML('afterbegin', toolsHtml);
 }
 
+
+function poolLabelForTeamIndex(index, desiredCount) {
+  const sizes = poolSizesForCount(Number(desiredCount || getTournamentTeamCount()), Number(settings && settings.courts_count) || 6);
+  const poolNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  let cursor = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    cursor += sizes[i];
+    if (index <= cursor) return poolNames[i] || '';
+  }
+  return '';
+}
+function defaultTeamNameByIndex(index) {
+  return `Équipe ${String(index).padStart(2,'0')}`;
+}
+function teamRowForAdmin(index) {
+  const existing = teams.find(t => Number(t.id) === Number(index));
+  const desired = getTournamentTeamCount();
+  return existing || { id:index, name:defaultTeamNameByIndex(index), level:'Loisir', initial_pool:poolLabelForTeamIndex(index, desired), __new:true };
+}
+
 function renderAdmin() {
   ensureAdminPriorityTools();
   if (!settings) return;
@@ -5131,9 +5151,13 @@ function renderAdmin() {
   const div = document.getElementById('teamsAdmin');
   if (div) {
     const desired = getTournamentTeamCount();
-    const missing = Math.max(0, desired - teams.length);
-    div.innerHTML = `${missing ? `<div class="admin-warning">Il manque ${missing} équipe(s) dans la table. Ajoute-les dans Supabase ou via la table teams avant génération.</div>` : ''}` +
-      teams.map(t => `<div class="team-edit team-edit-level"><span>${t.initial_pool || ''}${String(t.id).padStart(2,'0')}</span><input data-team-id="${t.id}" value="${escapeAttr(t.name)}" /><select data-team-level-id="${t.id}"><option value="Loisir" ${levelShort(t.level)==='LOISIR'?'selected':''}>Loisir</option><option value="Dép" ${levelShort(t.level)==='DEP'?'selected':''}>Dép</option><option value="Rég" ${levelShort(t.level)==='REG'?'selected':''}>Rég</option><option value="Nat" ${levelShort(t.level)==='NAT'?'selected':''}>Nat</option></select></div>`).join('');
+    const rows = Array.from({ length: desired }, (_, i) => teamRowForAdmin(i + 1));
+    const hiddenCount = Math.max(0, teams.length - desired);
+    div.innerHTML = `${hiddenCount ? `<div class="admin-info">${hiddenCount} équipe(s) au-delà de la configuration sont masquées et ne seront pas utilisées.</div>` : ''}` +
+      rows.map(t => {
+        const poolLabel = poolLabelForTeamIndex(Number(t.id), desired);
+        return `<div class="team-edit team-edit-level ${t.__new ? 'team-edit-new' : ''}"><span>${poolLabel}${String(t.id).padStart(2,'0')}</span><input data-team-id="${t.id}" data-team-new="${t.__new ? '1' : '0'}" data-team-pool="${poolLabel}" value="${escapeAttr(t.name)}" /><select data-team-level-id="${t.id}"><option value="Loisir" ${levelShort(t.level)==='LOISIR'?'selected':''}>Loisir</option><option value="Dép" ${levelShort(t.level)==='DEP'?'selected':''}>Dép</option><option value="Rég" ${levelShort(t.level)==='REG'?'selected':''}>Rég</option><option value="Nat" ${levelShort(t.level)==='NAT'?'selected':''}>Nat</option></select></div>`;
+      }).join('');
   }
   renderAdminForfeit(); renderAdminMatchReset(); renderAdminScoreCorrections();
 }
@@ -5148,11 +5172,16 @@ async function saveTeams() {
   if (!adminUnlocked) return;
   const inputs = [...document.querySelectorAll('[data-team-id]')];
   for (const input of inputs) {
-    const id = Number(input.dataset.teamId); const sel = document.querySelector(`[data-team-level-id="${id}"]`);
-    const payload = { name: input.value };
+    const id = Number(input.dataset.teamId);
+    const sel = document.querySelector(`[data-team-level-id="${id}"]`);
+    const poolLabel = input.dataset.teamPool || poolLabelForTeamIndex(id, getTournamentTeamCount());
+    const payload = { id, name: input.value || defaultTeamNameByIndex(id), initial_pool: poolLabel };
     if (sel) payload.level = sel.value;
-    const { error } = await client.from('teams').update(payload).eq('id', id);
-    if (error) { document.getElementById('adminMsg').innerText = 'Erreur sauvegarde équipe : ' + error.message; return; }
+    const exists = teams.some(t => Number(t.id) === id);
+    const result = exists
+      ? await client.from('teams').update(payload).eq('id', id)
+      : await client.from('teams').insert(payload);
+    if (result.error) { document.getElementById('adminMsg').innerText = 'Erreur sauvegarde équipe : ' + result.error.message; return; }
   }
   document.getElementById('adminMsg').innerText = 'Noms et niveaux équipes sauvegardés ✅'; await loadData();
 }
@@ -5166,7 +5195,7 @@ function renderPlanning() {
 }
 console.log(BUILD_V20);
 
-/* v20.3 - niveaux visibles dans Tableaux + Écran public */
+/* v20.4 - niveaux visibles dans Tableaux + Écran public */
 function renderBrackets() {
   const rankDiv = document.getElementById('globalRankingView');
   const bracketDiv = document.getElementById('bracketsView');
@@ -5301,5 +5330,5 @@ function renderPublicView() {
     '<div class="public-courts premium-public-courts">' + cards + '</div>' +
   '</div>';
 }
-window.CSM_BUILD = 'v20.3-niveaux-tableaux-public';
+window.CSM_BUILD = 'v20.4-niveaux-tableaux-public';
 console.log(window.CSM_BUILD);
