@@ -5381,3 +5381,117 @@ function renderPublicView() {
 }
 window.CSM_BUILD = 'v20.6-b1-equilibre-niveaux';
 console.log(window.CSM_BUILD);
+
+/* v20.7 - fix création équipe sans id + reset sans double popup */
+window.CSM_BUILD = 'v20.7-teams-auto-reset-single-popup';
+
+function sortedTeams_v207(){
+  return [...(teams || [])].sort((a,b)=>Number(a.id||0)-Number(b.id||0));
+}
+
+activeTeams = function(){
+  const count = getTournamentTeamCount();
+  return sortedTeams_v207().slice(0, count);
+};
+
+teamRowForAdmin = function(index){
+  const sorted = sortedTeams_v207();
+  const existing = sorted[index - 1];
+  const desired = getTournamentTeamCount();
+  if (existing) return { ...existing, __index:index, __new:false };
+  return { id:null, __index:index, name:defaultTeamNameByIndex(index), level:'Loisir', initial_pool:poolLabelForTeamIndex(index, desired), __new:true };
+};
+
+ensureConfiguredTeamsInDb = async function(){
+  const desired = getTournamentTeamCount();
+  let sorted = sortedTeams_v207();
+  const missingCount = Math.max(0, desired - sorted.length);
+  if (missingCount > 0) {
+    const rows = [];
+    for (let i = 0; i < missingCount; i++) {
+      const idx = sorted.length + i + 1;
+      rows.push({ name: defaultTeamNameByIndex(idx), level: 'Loisir', initial_pool: poolLabelForTeamIndex(idx, desired) });
+    }
+    const ins = await client.from('teams').insert(rows);
+    if (ins.error) throw new Error('création équipe(s) manquante(s) : ' + ins.error.message);
+  }
+  const ref = await client.from('teams').select('*').order('id');
+  if (ref.error) throw new Error('rechargement équipes : ' + ref.error.message);
+  teams = ref.data || [];
+  return activeTeams();
+};
+
+renderAdmin = function() {
+  ensureAdminPriorityTools(); if (!settings) return;
+  document.getElementById('cfgStart').value = settings.start_time || '09:30';
+  document.getElementById('cfgDuration').value = settings.match_duration || 12;
+  document.getElementById('cfgBreak').value = settings.break_duration || 3;
+  document.getElementById('cfgRoundBreak').value = settings.break_between_rounds || 15;
+  document.getElementById('cfgCourts').value = settings.courts_count || 6;
+  const cfgTeams = document.getElementById('cfgTeams'); if (cfgTeams) cfgTeams.value = getTournamentTeamCount();
+  const div = document.getElementById('teamsAdmin');
+  if (div) {
+    const desired = getTournamentTeamCount();
+    const sorted = sortedTeams_v207();
+    const rows = Array.from({ length: desired }, (_, i) => teamRowForAdmin(i + 1));
+    const hiddenCount = Math.max(0, sorted.length - desired);
+    div.innerHTML = `${hiddenCount ? `<div class="admin-info">${hiddenCount} équipe(s) au-delà de la configuration sont masquées et ne seront pas utilisées.</div>` : ''}` +
+      rows.map(t => {
+        const idx = Number(t.__index || t.id);
+        const poolLabel = poolLabelForTeamIndex(idx, desired);
+        const realId = t.id == null ? '' : String(t.id);
+        return `<div class="team-edit team-edit-level ${t.__new ? 'team-edit-new' : ''}"><span>${poolLabel}${String(idx).padStart(2,'0')}</span><input data-team-index="${idx}" data-team-real-id="${escapeAttr(realId)}" data-team-new="${t.__new ? '1' : '0'}" data-team-pool="${poolLabel}" value="${escapeAttr(t.name)}" /><select data-team-level-index="${idx}"><option value="Loisir" ${levelShort(t.level)==='LOISIR'?'selected':''}>Loisir</option><option value="Dép" ${levelShort(t.level)==='DEP'?'selected':''}>Dép</option><option value="Rég" ${levelShort(t.level)==='REG'?'selected':''}>Rég</option><option value="Nat" ${levelShort(t.level)==='NAT'?'selected':''}>Nat</option></select></div>`;
+      }).join('');
+  }
+  renderAdminForfeit(); renderAdminMatchReset(); renderAdminScoreCorrections();
+};
+
+saveTeams = async function() {
+  if (!adminUnlocked) return;
+  const inputs = [...document.querySelectorAll('[data-team-index]')];
+  for (const input of inputs) {
+    const idx = Number(input.dataset.teamIndex);
+    const realId = input.dataset.teamRealId ? Number(input.dataset.teamRealId) : null;
+    const sel = document.querySelector(`[data-team-level-index="${idx}"]`);
+    const poolLabel = input.dataset.teamPool || poolLabelForTeamIndex(idx, getTournamentTeamCount());
+    const payload = { name: input.value || defaultTeamNameByIndex(idx), initial_pool: poolLabel };
+    if (sel) payload.level = sel.value;
+    const result = realId
+      ? await client.from('teams').update(payload).eq('id', realId)
+      : await client.from('teams').insert(payload);
+    if (result.error) { document.getElementById('adminMsg').innerText = 'Erreur sauvegarde équipe : ' + result.error.message; return; }
+  }
+  document.getElementById('adminMsg').innerText = 'Noms et niveaux équipes sauvegardés ✅'; await loadData();
+};
+
+resetScores = async function() {
+  if (!adminUnlocked) return;
+  if (!confirm('Reset complet du tournoi ?\n\nTous les matchs seront supprimés de la base, puis le Brassage 1 sera recréé.\n\nLes noms et niveaux des équipes sont conservés.')) return;
+  const adminMsg = document.getElementById('adminMsg');
+  try {
+    if (adminMsg) adminMsg.innerText = 'Reset complet en cours...';
+    try {
+      (matches || []).forEach(function(m) { if (typeof clearMatchRuntimeLocalState === 'function') clearMatchRuntimeLocalState(m.id); });
+      if (typeof clearAllVolleyLocalStorage_v173x === 'function') clearAllVolleyLocalStorage_v173x();
+      localStorage.removeItem(activeMatchStorageKey());
+    } catch(e) {}
+    activeScoreMatchId = null;
+
+    const rpc = await client.rpc('reset_tournament_matches');
+    if (rpc.error) throw new Error('suppression matchs : ' + rpc.error.message);
+
+    await ensureConfiguredTeamsInDb();
+    const rows = generateBrassage1Rows();
+    const ins = await client.from('matches').insert(rows);
+    if (ins.error) throw new Error('création Brassage 1 : ' + ins.error.message);
+
+    await loadData();
+    try { const phaseFilter = document.getElementById('phaseFilter'); if (phaseFilter) phaseFilter.value = 'Brassage 1'; renderPlanning(); } catch(e) {}
+    if (adminMsg) adminMsg.innerText = `Reset complet OK ✅ ${rows.length} matchs Brassage 1 créés. Build ${window.CSM_BUILD}`;
+  } catch(e) {
+    if (adminMsg) adminMsg.innerText = 'Reset bloqué ❌ ' + e.message;
+    alert('Reset bloqué : ' + e.message);
+  }
+};
+
+console.log(window.CSM_BUILD);
