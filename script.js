@@ -9,6 +9,12 @@ function escapeHtml(str) {
 }
 window.escapeHtml = escapeHtml;
 
+// v20.14 - compatibility no-op: old admin render still calls this helper after the admin quick-actions block was removed.
+function ensureAdminPriorityTools() {
+  return;
+}
+window.ensureAdminPriorityTools = ensureAdminPriorityTools;
+
 // v18.0 - tri chronologique Voir mes matchs
 // v17.3o - force resume section for running matches
 // v17.3n - safety helpers loaded first
@@ -1384,4 +1390,7 @@ function teamPlainDisplay(name){
 
 /* v20.13 - reference fixes */
 window.CSM_BUILD = 'v20.13-reference-fixes-2026-05-29';
+console.log(window.CSM_BUILD);
+
+window.CSM_BUILD = 'v20.14-admin-priority-tools-fix-2026-05-29';
 console.log(window.CSM_BUILD);
