@@ -1,3 +1,4 @@
+const BUILD_V20 = 'v20.12';
 
 function escapeHtml(str) {
   return String(str ?? '')
