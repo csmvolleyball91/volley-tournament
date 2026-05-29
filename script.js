@@ -581,7 +581,7 @@ function renderTeamMatches() {
       <b>${computedScheduledTime(m) || '--:--'} — Terrain ${m.court || '-'}</b><br>
       ${m.phase || '-'} · Poule ${m.pool || '-'}<br>
       ${m.team_a || 'À définir'} vs ${m.team_b || 'À définir'}<br>
-      Arbitre : <b>${m.referee_team || '-'}</b><br>
+      Arbitre : <b>${m.referee_team ? teamPlainDisplay(m.referee_team) : '-'}</b><br>
       Score : ${scoreText(m)}<br>
       ${statusText(m)}
     </div>
@@ -616,7 +616,7 @@ function renderHistory() {
       <td>${m.team_a || '-'} vs ${m.team_b || '-'}</td>
       <td><b>${scoreText(m)}</b></td>
       <td>${m.winner || '-'}</td>
-      <td>${m.referee_team || (isBracketMatch(m) ? 'Libre / non renseigné' : '-')}</td>
+      <td>${m.referee_team ? teamPlainDisplay(m.referee_team) : (isBracketMatch(m) ? 'Libre / non renseigné' : '-')}</td>
     </tr>`).join('')}
   </table>`;
 }
@@ -646,7 +646,7 @@ function renderPlanning() {
       <td>${m.phase}</td>
       <td>${m.pool || '-'}</td>
       <td>#${m.id} ${m.team_a} vs ${m.team_b}</td>
-      <td>${m.referee_team || '-'}</td>
+      <td>${m.referee_team ? teamPlainDisplay(m.referee_team) : '-'}</td>
       <td>${scoreText(m)}</td>
       <td>${statusText(m)}</td>
     </tr>`).join('')}
@@ -790,7 +790,7 @@ function askRefCodeForMatch(m) {
 }
 
 function lockedMatchHtml(m) {
-  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team || '-'}</b></span><br><span>Clique sur Reprendre et confirme le code arbitre pour modifier.</span></div>`;
+  return `<div class="locked-box">🔒 Saisie verrouillée<br><span>Arbitre : <b>${m.referee_team ? teamPlainDisplay(m.referee_team) : '-'}</b></span><br><span>Clique sur Reprendre et confirme le code arbitre pour modifier.</span></div>`;
 }
 
 function isPlayableMatch(m) {
@@ -933,7 +933,7 @@ function renderMatchScoreboard(m) {
     return `
       <div class="card">
         <b>Terrain ${m.court || '-'} — Match #${m.id}</b><br>
-        ${computedScheduledTime(m) || 'Horaire à définir'} · ${m.phase} · ${m.round || ''}<br>Arbitre : <b>${m.referee_team || 'libre'}</b>
+        ${computedScheduledTime(m) || 'Horaire à définir'} · ${m.phase} · ${m.round || ''}<br>Arbitre : <b>${m.referee_team ? teamPlainDisplay(m.referee_team) : 'libre'}</b>
         <h2>${m.team_a || 'À définir'}</h2>
         <div class="score">VS</div>
         <h2>${m.team_b || 'À définir'}</h2>
@@ -2211,7 +2211,7 @@ function renderPublicView() {
   });
 
   const callout = firstCall
-    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Arbitre attendu : ' + (firstCall.referee_team || 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
+    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + firstCall.team_a + ' vs ' + firstCall.team_b + '</b><em>Arbitre attendu : ' + (firstCall.referee_team ? teamPlainDisplay(firstCall.referee_team) : 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
     : (freeCourts.length
       ? '<div class="public-callout is-calm"><span>✅ Terrains disponibles</span><b>' + freeCourts.map(function(c){ return 'T' + c; }).join(' · ') + '</b><em>En attente de la prochaine rotation</em></div>'
       : '<div class="public-callout is-calm"><span>✅ Tous les matchs sont lancés</span><b>Matchs en cours</b><em>Prochaine rotation à confirmer</em></div>');
@@ -2239,13 +2239,13 @@ function renderPublicView() {
       body += hasScore || isLive
         ? '<div class="public-scoreline premium"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>'
         : '<div class="public-waiting">Match à lancer</div>';
-      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team || 'libre') + '</div>';
+      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team ? teamPlainDisplay(current.referee_team) : 'libre') + '</div>';
     } else {
       body += '<div class="public-free-panel"><b>Terrain disponible</b><span>Aucun match en attente</span></div>';
     }
 
     const nextHtml = next
-      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + next.team_a + ' vs ' + next.team_b + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + next.referee_team : '') + '</em></div>'
+      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + next.team_a + ' vs ' + next.team_b + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + teamPlainDisplay(next.referee_team) : '') + '</em></div>'
       : '<div class="public-next premium-next is-empty"><span>À suivre</span><b>—</b><em>Aucun match programmé</em></div>';
 
     return '<div class="public-court-card premium-tv-card ' + statusClass + '">' +
@@ -2758,7 +2758,7 @@ function nextPendingMatchOnCourt(court) {
 function proposeNextMatchAfterFinish(finishedMatch) {
   const next = nextPendingMatchOnCourt(finishedMatch && finishedMatch.court);
   if (!next) return;
-  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team || 'à définir');
+  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team ? teamPlainDisplay(next.referee_team) : 'à définir');
   const msg = 'Terrain ' + (next.court || '-') + ' libre.\n\nLancer le prochain match ?\n' +
     (next.team_a || 'À définir') + ' vs ' + (next.team_b || 'À définir') + '\n' +
     'Arbitre attendu : ' + ref;
@@ -2873,7 +2873,7 @@ const proposeNextMatchAfterFinishBase_v173p = proposeNextMatchAfterFinish;
 proposeNextMatchAfterFinish = function(finishedMatch) {
   const next = nextPendingMatchOnCourt(finishedMatch && finishedMatch.court);
   if (!next) return;
-  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team || 'à définir');
+  const ref = isBracketMatch(next) ? 'arbitrage libre' : (next.referee_team ? teamPlainDisplay(next.referee_team) : 'à définir');
   const msg = '✅ Terrain ' + (next.court || '-') + ' libre.\n\n' +
     'Lancer le prochain match ?\n\n' +
     (next.team_a || 'À définir') + ' vs ' + (next.team_b || 'À définir') + '\n' +
@@ -3326,7 +3326,7 @@ renderPlanning = function() {
       <td>${m.phase || '-'}</td>
       <td>${m.pool || '-'}</td>
       <td>#${m.id} ${m.team_a || 'À définir'} vs ${m.team_b || 'À définir'}</td>
-      <td>${m.referee_team || '-'}</td>
+      <td>${m.referee_team ? teamPlainDisplay(m.referee_team) : '-'}</td>
       <td>${scoreText(m)}</td>
       <td>${statusText(m)}</td>
     </tr>`).join('')}
@@ -4906,6 +4906,12 @@ function teamDisplay(name){
   if (!name || name === 'À définir') return name || 'À définir';
   return `${escapeHtml(name)}${lvl ? ` <span class="team-level-badge">${escapeHtml(lvl)}</span>` : ''}`;
 }
+
+function teamPlainDisplay(name){
+  if (!name || name === 'À définir') return escapeHtml(name || 'À définir');
+  return escapeHtml(name);
+}
+
 function teamText(name){
   const lvl = levelShort(teamLevel(name));
   return `${name || ''}${lvl ? ' ('+lvl+')' : ''}`;
@@ -5240,7 +5246,7 @@ function renderPlanning() {
   const phaseEl=document.getElementById('phaseFilter'); const phase=phaseEl?phaseEl.value:'';
   let list=[...matches]; if(court) list=list.filter(m=>String(m.court)===court); if(phase) list=list.filter(m=>m.phase===phase);
   list.sort((a,b)=>computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || Number(a.court)-Number(b.court) || (a.id||0)-(b.id||0));
-  div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
+  div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamPlainDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
 }
 console.log(BUILD_V20);
 
@@ -5328,7 +5334,7 @@ function renderPublicView() {
   });
 
   const callout = firstCall
-    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + teamDisplay(firstCall.team_a) + ' vs ' + teamDisplay(firstCall.team_b) + '</b><em>Arbitre attendu : ' + (firstCall.referee_team ? teamDisplay(firstCall.referee_team) : 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
+    ? '<div class="public-callout is-urgent"><span>📢 Appel terrain ' + (firstCall.court || '-') + '</span><b>' + teamDisplay(firstCall.team_a) + ' vs ' + teamDisplay(firstCall.team_b) + '</b><em>Arbitre attendu : ' + (firstCall.referee_team ? teamPlainDisplay(firstCall.referee_team) : 'équipe à confirmer') + ' · Merci de vous présenter</em></div>'
     : (freeCourts.length
       ? '<div class="public-callout is-calm"><span>✅ Terrains disponibles</span><b>' + freeCourts.map(function(c){ return 'T' + c; }).join(' · ') + '</b><em>En attente de la prochaine rotation</em></div>'
       : '<div class="public-callout is-calm"><span>✅ Tous les matchs sont lancés</span><b>Matchs en cours</b><em>Prochaine rotation à confirmer</em></div>');
@@ -5355,13 +5361,13 @@ function renderPublicView() {
       body += hasScore || isLive
         ? '<div class="public-scoreline premium"><span>' + scoreA + '</span><b>-</b><span>' + scoreB + '</span></div>'
         : '<div class="public-waiting">Match à lancer</div>';
-      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team ? teamDisplay(current.referee_team) : 'libre') + '</div>';
+      body += '<div class="public-ref premium-ref">Arbitre : ' + (current.referee_team ? teamPlainDisplay(current.referee_team) : 'libre') + '</div>';
     } else {
       body += '<div class="public-free-panel"><b>Terrain disponible</b><span>Aucun match en attente</span></div>';
     }
 
     const nextHtml = next
-      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + teamDisplay(next.team_a) + ' vs ' + teamDisplay(next.team_b) + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + teamDisplay(next.referee_team) : '') + '</em></div>'
+      ? '<div class="public-next premium-next"><span>À suivre</span><b>' + teamDisplay(next.team_a) + ' vs ' + teamDisplay(next.team_b) + '</b><em>' + (computedScheduledTime(next) || 'Horaire à confirmer') + (next.referee_team ? ' · Arbitre : ' + teamPlainDisplay(next.referee_team) : '') + '</em></div>'
       : '<div class="public-next premium-next is-empty"><span>À suivre</span><b>—</b><em>Aucun match programmé</em></div>';
 
     return '<div class="public-court-card premium-tv-card ' + statusClass + '">' +
@@ -5495,3 +5501,127 @@ resetScores = async function() {
 };
 
 console.log(window.CSM_BUILD);
+
+
+/* v20.8 - Admin cleanup + referee codes restored */
+(function(){
+  window.CSM_BUILD = 'v20.8-admin-clean-codes-2026-05-29';
+
+  // Remove the duplicated quick-action block at the top of Admin.
+  renderAdminAlwaysVisibleTools = function() {
+    const box = document.getElementById('adminToolsAlwaysVisible');
+    if (box) box.remove();
+  };
+
+  function adminTeamRowsForConfiguredCount_v208() {
+    const desired = Number(getTournamentTeamCount && getTournamentTeamCount()) || (teams || []).length || 24;
+    if (typeof teamRowForAdmin === 'function') {
+      return Array.from({ length: desired }, (_, i) => teamRowForAdmin(i + 1));
+    }
+    const sorted = [...(teams || [])].sort((a,b) => Number(a.id||0) - Number(b.id||0));
+    return Array.from({ length: desired }, (_, i) => sorted[i] || { id:i+1, name:`Équipe ${String(i+1).padStart(2,'0')}`, level:'Loisir', __new:true });
+  }
+
+  function safeHtml_v208(value) {
+    if (typeof escapeHtml === 'function') return escapeHtml(value);
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function safeAttr_v208(value) {
+    if (typeof escapeAttr === 'function') return escapeAttr(value);
+    return safeHtml_v208(value);
+  }
+
+  function codeForTeamRow_v208(t, index, codeMap) {
+    const name = String(t && t.name || `Équipe ${String(index).padStart(2,'0')}`);
+    const existing = codeMap && codeMap[name];
+    if (existing) return existing;
+    try {
+      return defaultTeamCode({ id: t && t.id ? t.id : index, name });
+    } catch(e) {
+      return String(index).padStart(4,'0').slice(-4);
+    }
+  }
+
+  function renderCodesAdmin_v208() {
+    const codesDiv = document.getElementById('codesAdmin');
+    if (!codesDiv) return;
+    if (!adminUnlocked) {
+      codesDiv.innerHTML = '<p class="small">Déverrouille l\'admin pour afficher les codes arbitres.</p>';
+      return;
+    }
+
+    const rows = adminTeamRowsForConfiguredCount_v208();
+    const codeMap = (typeof buildTeamRefCodeMap === 'function') ? buildTeamRefCodeMap(false) : {};
+    const phases = ['Brassage 1', 'Brassage 2'];
+    const refCountByPhase = {};
+    phases.forEach(phase => {
+      refCountByPhase[phase] = {};
+      rows.forEach(t => { refCountByPhase[phase][String(t.name)] = 0; });
+      (matches || []).filter(m => m.phase === phase && m.referee_team).forEach(m => {
+        refCountByPhase[phase][m.referee_team] = (refCountByPhase[phase][m.referee_team] || 0) + 1;
+      });
+    });
+
+    codesDiv.innerHTML =
+      '<h3>Codes arbitres par équipe</h3>' +
+      '<p class="small">Codes fixes par équipe, visibles seulement en admin. Tu peux les modifier ici.</p>' +
+      '<div class="table-scroll"><table><tr><th>Équipe</th><th>Code arbitre</th><th>B1</th><th>B2</th></tr>' +
+      rows.map((t, i) => {
+        const idx = Number(t.__index || t.id || (i+1));
+        const name = String(t.name || `Équipe ${String(idx).padStart(2,'0')}`);
+        const code = codeForTeamRow_v208(t, idx, codeMap);
+        return '<tr>' +
+          '<td>' + safeHtml_v208(name) + (t.__new ? ' <span class="team-level-badge">à créer</span>' : '') + '</td>' +
+          '<td><input class="code-input" data-ref-code-team="' + safeAttr_v208(name) + '" value="' + safeAttr_v208(code) + '" inputmode="numeric" maxlength="4" placeholder="auto" /></td>' +
+          '<td>' + (refCountByPhase['Brassage 1'][name] || 0) + '</td>' +
+          '<td>' + (refCountByPhase['Brassage 2'][name] || 0) + '</td>' +
+        '</tr>';
+      }).join('') +
+      '</table></div>' +
+      '<button onclick="saveRefCodes()">Sauvegarder codes arbitres</button>' +
+      '<button onclick="rebalanceRefereesForBrassages()">Rééquilibrer arbitres brassages</button>';
+  }
+
+  const previousRenderAdmin_v208 = renderAdmin;
+  renderAdmin = function() {
+    previousRenderAdmin_v208();
+    renderAdminAlwaysVisibleTools();
+    renderCodesAdmin_v208();
+  };
+
+  // Also make renderAll safe in case it calls the old quick-actions function after renderAdmin.
+  try { renderAdminAlwaysVisibleTools(); } catch(e) {}
+  console.log(window.CSM_BUILD);
+})();
+
+
+/* v20.9 - no level tags for referees / codes */
+(function(){
+  window.CSM_BUILD = 'v20.9-no-referee-level-tags-2026-05-29';
+  // Keep the team level badges on teams/matches/tableaux, but never on referee labels.
+  window.teamPlainDisplay = typeof teamPlainDisplay === 'function' ? teamPlainDisplay : function(name){
+    if (typeof escapeHtml === 'function') return escapeHtml(name || '');
+    return String(name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  };
+  console.log(window.CSM_BUILD);
+})();
+
+
+/* v20.10 - remove level badges from every referee display */
+(function(){
+  window.CSM_BUILD = 'v20.10-no-referee-badges-public-2026-05-29';
+  // Global helper for text-only referee labels. Team/player labels keep their level badges via teamDisplay().
+  window.refereeDisplay = function(name){
+    if (!name) return '';
+    if (typeof teamPlainDisplay === 'function') return teamPlainDisplay(name);
+    if (typeof escapeHtml === 'function') return escapeHtml(name);
+    return String(name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  };
+  console.log(window.CSM_BUILD);
+})();
