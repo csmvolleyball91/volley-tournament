@@ -5632,3 +5632,96 @@ console.log(window.CSM_BUILD);
   };
   window.CSM_BUILD = 'v20.17-classement-ratio-fix';
 })();
+
+/* v20.18 - Fix génération Brassage 2 adaptative 22-26 équipes
+   Un ancien handler B2 attendait encore 36 matchs. On force ici le handler final.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.18-b2-adaptatif-serpentin';
+
+  function expectedB1MatchCount_v2018(){
+    const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : (teams || []).length;
+    const courtCount = Number(settings && settings.courts_count) || 6;
+    const sizes = (typeof poolSizesForCount === 'function') ? poolSizesForCount(teamCount, courtCount) : [4,4,4,4,4,4];
+    return (typeof expectedRoundRobinMatchesForSizes === 'function')
+      ? expectedRoundRobinMatchesForSizes(sizes)
+      : sizes.reduce((sum, s) => sum + (s * (s - 1)) / 2, 0);
+  }
+
+  function completedMatch_v2018(m){
+    return m && m.status === 'done' && m.score_a !== null && m.score_a !== undefined && m.score_b !== null && m.score_b !== undefined;
+  }
+
+  window.generateBrassage2 = generateBrassage2 = async function(){
+    if (!adminUnlocked) return;
+    const adminMsg = document.getElementById('adminMsg');
+    try {
+      const expected = expectedB1MatchCount_v2018();
+      const b1Matches = (matches || []).filter(m => m.phase === 'Brassage 1');
+      if (b1Matches.length !== expected) {
+        if (adminMsg) adminMsg.innerText = `Impossible : il faut ${expected} matchs en Brassage 1, trouvés ${b1Matches.length}.`;
+        return;
+      }
+      const unfinished = b1Matches.filter(m => !completedMatch_v2018(m));
+      if (unfinished.length) {
+        if (adminMsg) adminMsg.innerText = `Impossible : ${unfinished.length} match(s) de Brassage 1 ne sont pas terminés.`;
+        return;
+      }
+      if (!confirm('Générer le Brassage 2 en serpentin ?\n\nLes matchs Brassage 2 existants seront supprimés puis recréés.')) return;
+
+      const ranking = (typeof phaseGlobalRanking === 'function') ? phaseGlobalRanking('Brassage 1') : [];
+      const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : ranking.length;
+      const courtCount = Number(settings && settings.courts_count) || 6;
+      const sizes = (typeof poolSizesForCount === 'function') ? poolSizesForCount(teamCount, courtCount) : [4,4,4,4,4,4];
+      const pools = (typeof serpentinePoolsFromRanking === 'function')
+        ? serpentinePoolsFromRanking(ranking, sizes)
+        : [];
+      const startB2 = (typeof getBrassage2StartTime === 'function') ? getBrassage2StartTime() : (settings && settings.start_time) || '09:30';
+      const poolNames = 'GHIJKLMNOPQRSTUVWXYZ'.split('');
+      let rows = [];
+      pools.forEach((poolTeams, idx) => {
+        rows.push(...generateRoundRobinRows('Brassage 2', poolNames[idx] || String(idx + 1), idx + 1, poolTeams, startB2));
+      });
+      if (typeof assignBalancedRefsInPools === 'function' && typeof previousRefCounts === 'function') {
+        rows = assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1'));
+      }
+      if (typeof withAccessCodes === 'function') {
+        rows = withAccessCodes(rows, ((matches || []).filter(m => m.phase === 'Brassage 1').length || 0) + 1);
+      }
+
+      if (adminMsg) adminMsg.innerText = 'Nettoyage ancien Brassage 2...';
+      const del = await client.from('matches').delete().eq('phase', 'Brassage 2');
+      if (del.error) throw new Error('suppression ancien Brassage 2 : ' + del.error.message);
+
+      const ins = await client.from('matches').insert(rows);
+      if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
+      if (adminMsg) adminMsg.innerText = `Brassage 2 généré ✅ Serpentin B1, ${rows.length} matchs créés.`;
+      await loadData();
+    } catch(e) {
+      if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
+      alert('Impossible de générer Brassage 2 : ' + e.message);
+    }
+  };
+
+  // Sécurise aussi le bouton tableaux : il attend le nombre de matchs B2 réel, pas 36.
+  const previousGenerateBrackets_v2018 = (typeof generateBrackets === 'function') ? generateBrackets : null;
+  window.generateBrackets = generateBrackets = async function(){
+    if (!adminUnlocked) return;
+    const adminMsg = document.getElementById('adminMsg');
+    const expected = expectedB1MatchCount_v2018();
+    const b2Matches = (matches || []).filter(m => m.phase === 'Brassage 2');
+    if (b2Matches.length !== expected) {
+      if (adminMsg) adminMsg.innerText = `Impossible : il faut ${expected} matchs en Brassage 2, trouvés ${b2Matches.length}.`;
+      return;
+    }
+    const unfinished = b2Matches.filter(m => !completedMatch_v2018(m));
+    if (unfinished.length) {
+      if (adminMsg) adminMsg.innerText = `Impossible : ${unfinished.length} match(s) de Brassage 2 ne sont pas terminés.`;
+      return;
+    }
+    // On garde la génération v20 existante si elle existe : elle sait créer principal + consolante adaptatifs.
+    if (previousGenerateBrackets_v2018) return previousGenerateBrackets_v2018();
+  };
+
+  console.log(window.CSM_BUILD);
+})();
