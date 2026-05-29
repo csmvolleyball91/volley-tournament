@@ -392,7 +392,7 @@ function renderDashboard() {
   const nextCall = pending.slice().sort(function(a,b) { return (computedScheduledTime(a) || '').localeCompare(computedScheduledTime(b) || '') || Number(a.court || 0) - Number(b.court || 0); })[0];
   if (nextCall) {
     callout.classList.remove('hidden');
-    callout.innerHTML = '📢 <b>À appeler :</b> ' + nextCall.team_a + ' vs ' + nextCall.team_b + ' — Terrain ' + (nextCall.court || '?') + (nextCall.referee_team ? ' · Arbitre : ' + nextCall.referee_team : '');
+    callout.innerHTML = '📢 <b>À appeler :</b> ' + nextCall.team_a + ' vs ' + nextCall.team_b + ' — Terrain ' + (nextCall.court || '?') + (nextCall.referee_team ? ' · Arbitre : ' + teamPlainDisplay(nextCall.referee_team) : '');
   } else {
     callout.classList.add('hidden');
     callout.innerHTML = '';
@@ -844,7 +844,7 @@ function renderScoreSection() {
   }
 
   listDiv.innerHTML = todo.map(m => {
-    const ref = isBracketMatch(m) ? 'Arbitrage libre' : (m.referee_team || '-');
+    const ref = isBracketMatch(m) ? 'Arbitrage libre' : (m.referee_team ? teamPlainDisplay(m.referee_team) : '-');
     const isLate = isMatchLate(m);
     const statusLabel = isLate ? 'RETARD' : 'EN ATTENTE';
     const statusClass = isLate ? 'status-late' : 'status-next';
@@ -5625,3 +5625,52 @@ console.log(window.CSM_BUILD);
   };
   console.log(window.CSM_BUILD);
 })();
+
+
+/* v20.11 - correction définitive badges niveaux sur arbitres */
+(function(){
+  window.CSM_BUILD = 'v20.11-no-referee-badges-hard-2026-05-29';
+
+  window.stripTeamLevelBadgeFromHtml = function(value){
+    let s = String(value || '');
+    // Supprime les badges HTML éventuellement stockés/concaténés par erreur.
+    s = s.replace(/\s*<span[^>]*class=["'][^"']*team-level-badge[^"']*["'][^>]*>.*?<\/span>/gi, '');
+    // Supprime d'autres spans simples de niveau si jamais ils existent.
+    s = s.replace(/\s*<span[^>]*>\s*(REG|RÉG|DEP|DÉP|LOISIR|NAT)\s*<\/span>/gi, '');
+    // Nettoie un suffixe texte accidentel uniquement s'il est vraiment à la fin.
+    s = s.replace(/\s*[\[(]?\s*(REG|RÉG|DEP|DÉP|LOISIR|NAT)\s*[\])]?\s*$/i, '');
+    return s.trim();
+  };
+
+  // Redéfinition volontaire : utilisé pour tout affichage arbitre/codes.
+  window.teamPlainDisplay = function(name){
+    const clean = window.stripTeamLevelBadgeFromHtml(name);
+    if (typeof escapeHtml === 'function') return escapeHtml(clean);
+    return String(clean || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  };
+
+  window.refereeDisplay = window.teamPlainDisplay;
+
+  // Filet de sécurité visuel : si un ancien rendu injecte encore un badge dans une zone arbitre, on le masque.
+  const css = document.createElement('style');
+  css.textContent = `
+    .public-callout em .team-level-badge,
+    .launch-referee .team-level-badge,
+    .public-ref .team-level-badge,
+    .locked-box .team-level-badge,
+    .admin-correction-sub .team-level-badge,
+    td:nth-child(6) .team-level-badge {
+      display: none !important;
+    }
+  `;
+  document.head.appendChild(css);
+
+  console.log(window.CSM_BUILD);
+})();
+
+
+function teamPlainDisplay(name){
+  const clean = (window.stripTeamLevelBadgeFromHtml ? window.stripTeamLevelBadgeFromHtml(name) : String(name || ''));
+  if (typeof escapeHtml === 'function') return escapeHtml(clean);
+  return String(clean || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
