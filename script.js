@@ -1,3 +1,14 @@
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+window.escapeHtml = escapeHtml;
+
 // v18.0 - tri chronologique Voir mes matchs
 // v17.3o - force resume section for running matches
 // v17.3n - safety helpers loaded first
