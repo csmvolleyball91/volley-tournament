@@ -777,6 +777,98 @@ function renderStandings() {
   });
   div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
 }
+
+
+/* v20.15 - fonctions classement global restaurées */
+function completedMatch(m) {
+  return !!m && m.score_a !== null && m.score_a !== undefined && m.score_b !== null && m.score_b !== undefined;
+}
+function statEmpty() {
+  return { mj:0, v:0, d:0, diff:0, pm:0, pe:0, score:0, winPct:0, ratio:0 };
+}
+function addMatchToStats(stats, m) {
+  if (!m || !completedMatch(m)) return;
+  const a = m.team_a;
+  const b = m.team_b;
+  if (!a || !b || a === 'À définir' || b === 'À définir') return;
+  if (!stats[a]) stats[a] = statEmpty();
+  if (!stats[b]) stats[b] = statEmpty();
+  const sa = Number(m.score_a);
+  const sb = Number(m.score_b);
+  if (!Number.isFinite(sa) || !Number.isFinite(sb)) return;
+  const da = sa - sb;
+  const db = sb - sa;
+  stats[a].mj++; stats[b].mj++;
+  stats[a].pm += sa; stats[a].pe += sb; stats[a].diff += da;
+  stats[b].pm += sb; stats[b].pe += sa; stats[b].diff += db;
+  if (sa > sb) { stats[a].v++; stats[b].d++; }
+  else if (sb > sa) { stats[b].v++; stats[a].d++; }
+}
+function finalizeStats(s) {
+  s = s || statEmpty();
+  s.mj = Number(s.mj || 0);
+  s.v = Number(s.v || 0);
+  s.d = Number(s.d || 0);
+  s.pm = Number(s.pm || 0);
+  s.pe = Number(s.pe || 0);
+  s.diff = Number(s.diff || 0);
+  s.winPct = s.mj > 0 ? s.v / s.mj : 0;
+  s.ratio = s.pe > 0 ? s.pm / s.pe : (s.pm > 0 ? 999 : 0);
+  s.score = Math.round(s.winPct * 1000000) + Math.round(s.ratio * 1000) + s.pm;
+  return s;
+}
+function fmtRatio(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+}
+function aggregatePhaseStats(phase) {
+  const stats = {};
+  activeTeams().forEach(t => { if (t && t.name) stats[t.name] = statEmpty(); });
+  matches.filter(m => m.phase === phase).forEach(m => addMatchToStats(stats, m));
+  Object.values(stats).forEach(finalizeStats);
+  return stats;
+}
+function phaseGlobalRanking(phase) {
+  const stats = aggregatePhaseStats(phase);
+  return Object.entries(stats).map(([name, st]) => ({ name, ...finalizeStats(st) })).sort((a,b) =>
+    (b.winPct - a.winPct) ||
+    (b.ratio - a.ratio) ||
+    (b.pm - a.pm) ||
+    (b.diff - a.diff) ||
+    (teamNumberFromName(a.name) - teamNumberFromName(b.name)) ||
+    String(a.name).localeCompare(String(b.name))
+  );
+}
+function globalRanking() {
+  const b2 = aggregatePhaseStats('Brassage 2');
+  const b1 = aggregatePhaseStats('Brassage 1');
+  return activeTeams().map(t => {
+    const name = t.name;
+    const s2 = finalizeStats(b2[name] || statEmpty());
+    const s1 = finalizeStats(b1[name] || statEmpty());
+    return {
+      name,
+      b2WinPct: s2.winPct,
+      b2Ratio: s2.ratio,
+      b2Pm: s2.pm,
+      b2Diff: s2.diff,
+      b1WinPct: s1.winPct,
+      b1Ratio: s1.ratio,
+      b1Pm: s1.pm,
+      b1Diff: s1.diff
+    };
+  }).sort((a,b) =>
+    (b.b2WinPct - a.b2WinPct) || (b.b2Ratio - a.b2Ratio) || (b.b2Pm - a.b2Pm) || (b.b2Diff - a.b2Diff) ||
+    (b.b1WinPct - a.b1WinPct) || (b.b1Ratio - a.b1Ratio) || (b.b1Pm - a.b1Pm) || (b.b1Diff - a.b1Diff) ||
+    (teamNumberFromName(a.name) - teamNumberFromName(b.name)) || String(a.name).localeCompare(String(b.name))
+  ).map((r, idx) => ({
+    ...r,
+    rank: idx + 1,
+    b2Score: `${Math.round(r.b2WinPct * 100)}% · R${fmtRatio(r.b2Ratio)}`,
+    b1Score: `${Math.round(r.b1WinPct * 100)}% · R${fmtRatio(r.b1Ratio)}`
+  }));
+}
+
 function levelWeightForB1(level){
   const l = levelShort(level);
   if (l === 'NAT') return 4;
@@ -959,7 +1051,7 @@ function renderPlanning() {
   list.sort((a,b)=>computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || Number(a.court)-Number(b.court) || (a.id||0)-(b.id||0));
   div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamPlainDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
 }
-window.CSM_BUILD = window.CSM_BUILD || 'v20.13-reference-fix';
+window.CSM_BUILD = 'v20.15-global-ranking-fix';
 console.log(window.CSM_BUILD);
 
 /* v20.4 - niveaux visibles dans Tableaux + Écran public */
