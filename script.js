@@ -5932,3 +5932,156 @@ console.log(window.CSM_BUILD);
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.23 - Fix définitif doublons Brassage 2 avant génération tableaux
+   Problème: si B2 est généré deux fois avec des répartitions différentes, la déduplication par paire ne suffit pas.
+   Solution: pour Brassage 2, l'application ne garde que la DERNIÈRE génération complète (derniers IDs), puis ignore l'ancien B2.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.23-fix-doublons-b2-derniere-generation';
+
+  function expectedCountV2023(){
+    try {
+      if (typeof expectedAdaptiveMatchCount_v2021 === 'function') return expectedAdaptiveMatchCount_v2021();
+      if (typeof expectedBrassageMatches === 'function') return expectedBrassageMatches();
+      if (typeof expectedB1MatchCount_v2018 === 'function') return expectedB1MatchCount_v2018();
+    } catch(e) {}
+    const teamCount = (typeof getTournamentTeamCount === 'function') ? Number(getTournamentTeamCount()) : ((teams || []).length || 24);
+    const courtCount = Number(settings && settings.courts_count) || 6;
+    const sizes = (typeof poolSizesForCount === 'function') ? poolSizesForCount(teamCount, courtCount) : [4,4,4,4,4,4];
+    return sizes.reduce((sum, s) => sum + (Number(s) * (Number(s) - 1)) / 2, 0);
+  }
+
+  function completedV2023(m){
+    return !!m && m.status === 'done' && m.score_a !== null && m.score_a !== undefined && m.score_b !== null && m.score_b !== undefined;
+  }
+
+  function sortPhaseRowsV2023(list){
+    return [...list].sort((a,b) =>
+      String(a.pool || '').localeCompare(String(b.pool || '')) ||
+      (Number(a.match_order || 0) - Number(b.match_order || 0)) ||
+      (Number(a.scheduled_time ? String(a.scheduled_time).replace(':','') : 0) - Number(b.scheduled_time ? String(b.scheduled_time).replace(':','') : 0)) ||
+      (Number(a.id || 0) - Number(b.id || 0))
+    );
+  }
+
+  function latestGenerationRowsV2023(phase){
+    const raw = (matches || []).filter(m => m.phase === phase);
+    if (phase !== 'Brassage 2') return sortPhaseRowsV2023(raw);
+
+    const expected = expectedCountV2023();
+    if (raw.length <= expected) return sortPhaseRowsV2023(raw);
+
+    // Cas fréquent : 72/80 lignes après double génération. On prend le dernier lot complet par ID.
+    const latest = [...raw]
+      .sort((a,b) => Number(b.id || 0) - Number(a.id || 0))
+      .slice(0, expected);
+    return sortPhaseRowsV2023(latest);
+  }
+
+  window.uniquePhaseMatches = function uniquePhaseMatches(phase){
+    return latestGenerationRowsV2023(phase);
+  };
+
+  window.aggregatePhaseStats = aggregatePhaseStats = function(phase){
+    const makeEmpty = () => ({ mj:0, v:0, d:0, pm:0, pe:0, diff:0, winPct:0, ratio:0 });
+    const stats = {};
+    (typeof activeTeams === 'function' ? activeTeams() : (teams || [])).forEach(t => stats[t.name] = makeEmpty());
+
+    latestGenerationRowsV2023(phase).forEach(m => {
+      if (!completedV2023(m)) return;
+      if (!stats[m.team_a]) stats[m.team_a] = makeEmpty();
+      if (!stats[m.team_b]) stats[m.team_b] = makeEmpty();
+      const a = Number(m.score_a), b = Number(m.score_b);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+      stats[m.team_a].mj++; stats[m.team_b].mj++;
+      stats[m.team_a].pm += a; stats[m.team_a].pe += b; stats[m.team_a].diff += a - b;
+      stats[m.team_b].pm += b; stats[m.team_b].pe += a; stats[m.team_b].diff += b - a;
+      if (a > b) { stats[m.team_a].v++; stats[m.team_b].d++; }
+      else if (b > a) { stats[m.team_b].v++; stats[m.team_a].d++; }
+    });
+
+    Object.values(stats).forEach(s => {
+      s.winPct = s.mj ? s.v / s.mj : 0;
+      s.ratio = s.pe > 0 ? s.pm / s.pe : (s.pm > 0 ? 999 : 0);
+    });
+    return stats;
+  };
+
+  function fmtPct(v){ return Math.round((Number(v)||0) * 100); }
+  function fmtRatSort(v){ return Math.round((Number(v)||0) * 100); }
+  function fmtRatio(v){ const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; }
+  function fmtScore(wp, ratio, mj){ return Number(mj||0) ? `${fmtPct(wp)}% · R${fmtRatio(ratio)}` : '-'; }
+
+  window.globalRanking = globalRanking = function(){
+    const b2 = aggregatePhaseStats('Brassage 2');
+    const b1 = aggregatePhaseStats('Brassage 1');
+    const active = (typeof activeTeams === 'function' ? activeTeams() : (teams || []));
+    return active.map(t => {
+      const s2 = b2[t.name] || {};
+      const s1 = b1[t.name] || {};
+      return {
+        name: t.name,
+        b2WinPct: Number(s2.winPct || 0), b2Ratio: Number(s2.ratio || 0), b2Pm: Number(s2.pm || 0), b2Mj: Number(s2.mj || 0),
+        b1WinPct: Number(s1.winPct || 0), b1Ratio: Number(s1.ratio || 0), b1Pm: Number(s1.pm || 0), b1Mj: Number(s1.mj || 0)
+      };
+    }).sort((a,b) =>
+      (fmtPct(b.b2WinPct) - fmtPct(a.b2WinPct)) ||
+      (fmtRatSort(b.b2Ratio) - fmtRatSort(a.b2Ratio)) ||
+      (fmtPct(b.b1WinPct) - fmtPct(a.b1WinPct)) ||
+      (fmtRatSort(b.b1Ratio) - fmtRatSort(a.b1Ratio)) ||
+      ((Number(b.b2Pm)||0) - (Number(a.b2Pm)||0)) ||
+      ((Number(b.b1Pm)||0) - (Number(a.b1Pm)||0)) ||
+      ((typeof teamNumberFromName === 'function' ? teamNumberFromName(a.name) : 0) - (typeof teamNumberFromName === 'function' ? teamNumberFromName(b.name) : 0)) ||
+      String(a.name).localeCompare(String(b.name))
+    ).map((r,idx) => ({
+      ...r,
+      rank: idx + 1,
+      b2Score: fmtScore(r.b2WinPct, r.b2Ratio, r.b2Mj),
+      b1Score: fmtScore(r.b1WinPct, r.b1Ratio, r.b1Mj)
+    }));
+  };
+
+  window.generateBrackets = generateBrackets = async function(){
+    if (!adminUnlocked) return;
+    const adminMsg = document.getElementById('adminMsg');
+    try {
+      const expected = expectedCountV2023();
+      const rawB2 = (matches || []).filter(m => m.phase === 'Brassage 2');
+      const b2 = latestGenerationRowsV2023('Brassage 2');
+      if (b2.length !== expected) {
+        if (adminMsg) adminMsg.innerText = `Impossible : il faut ${expected} matchs en Brassage 2, trouvés ${b2.length} (${rawB2.length} lignes en base).`;
+        return;
+      }
+      const unfinished = b2.filter(m => !completedV2023(m));
+      if (unfinished.length) {
+        if (adminMsg) adminMsg.innerText = `Impossible : ${unfinished.length} match(s) de Brassage 2 ne sont pas terminés.`;
+        return;
+      }
+      if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+
+      // Nettoyage optionnel de l'ancien B2 pour éviter que le problème revienne dans les écrans suivants.
+      if (rawB2.length > expected) {
+        const keepIds = new Set(b2.map(m => Number(m.id)));
+        const deleteIds = rawB2.map(m => Number(m.id)).filter(id => id && !keepIds.has(id));
+        if (deleteIds.length) {
+          const delDup = await client.from('matches').delete().in('id', deleteIds);
+          if (delDup.error && adminMsg) adminMsg.innerText = `Attention : doublons B2 ignorés mais non supprimés (${delDup.error.message}).`;
+        }
+      }
+
+      const rows = (typeof bracketRowsFromRanking === 'function') ? bracketRowsFromRanking(globalRanking()) : [];
+      const del = await client.from('matches').delete().in('phase', ['Tableau principal','Consolante','Tableaux']);
+      if (del.error) throw new Error('suppression anciens tableaux : ' + del.error.message);
+      const ins = await client.from('matches').insert(rows);
+      if (ins.error) throw new Error('création tableaux : ' + ins.error.message);
+      if (adminMsg) adminMsg.innerText = `Tableaux générés ✅ ${rows.length} matchs créés.` + (rawB2.length > expected ? ` Doublons B2 nettoyés/ignorés (${rawB2.length} → ${expected}).` : '');
+      await loadData();
+    } catch(e) {
+      if (adminMsg) adminMsg.innerText = 'Impossible de générer les tableaux : ' + e.message;
+      alert('Impossible de générer les tableaux : ' + e.message);
+    }
+  };
+
+  console.log(window.CSM_BUILD);
+})();
