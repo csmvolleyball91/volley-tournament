@@ -4957,6 +4957,10 @@ function finalizeStats(s){
   s.score = Math.round(s.winPct * 1000000) + Math.round(s.ratio * 1000) + s.pm;
   return s;
 }
+function fmtRatio(v){
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+}
 function compareStats(a,b){
   const sa=a[1], sb=b[1];
   return (sb.winPct - sa.winPct) || (sb.ratio - sa.ratio) || (sb.pm - sa.pm) || (sb.diff - sa.diff) || String(a[0]).localeCompare(String(b[0]));
@@ -4996,7 +5000,7 @@ function globalRanking() {
     b.b2WinPct - a.b2WinPct || b.b2Ratio - a.b2Ratio || b.b2Pm - a.b2Pm ||
     b.b1WinPct - a.b1WinPct || b.b1Ratio - a.b1Ratio || b.b1Pm - a.b1Pm ||
     teamNumberFromName(a.name) - teamNumberFromName(b.name) || String(a.name).localeCompare(String(b.name))
-  ).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${r.b2Ratio.toFixed(2)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${r.b1Ratio.toFixed(2)}` }));
+  ).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${fmtRatio(r.b2Ratio)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${fmtRatio(r.b1Ratio)}` }));
 }
 function renderStandings() {
   const div = document.getElementById('standingsView'); if (!div) return;
@@ -5007,8 +5011,8 @@ function renderStandings() {
     html += `<div class="ranking-phase"><div class="ranking-phase-title"><span>${phase}</span><small>Classement : % victoires, ratio points marqués/encaissés, puis points marqués</small></div><div class="ranking-grid">`;
     pools.forEach(pool => {
       const statsRows = poolStats(phase, pool);
-      const topThree = statsRows.slice(0,3).map(([name,s],i) => `<div class="ranking-podium-item rank-${i+1}"><span class="ranking-medal">${i===0?'🥇':i===1?'🥈':'🥉'}</span><strong>${teamDisplay(name)}</strong><small>${Math.round(s.winPct*100)}% · Ratio ${s.ratio.toFixed(2)}</small></div>`).join('');
-      const rows = statsRows.map(([name,s],i) => `<tr class="rank-row ${i<3?'rank-highlight':''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${teamDisplay(name)}</b></td><td class="score-cell">${Math.round(s.winPct*100)}%</td><td>${s.ratio.toFixed(2)}</td><td>${s.mj}</td><td>${s.v}</td><td>${s.d}</td><td>${s.pm}</td></tr>`).join('');
+      const topThree = statsRows.slice(0,3).map(([name,s],i) => `<div class="ranking-podium-item rank-${i+1}"><span class="ranking-medal">${i===0?'🥇':i===1?'🥈':'🥉'}</span><strong>${teamDisplay(name)}</strong><small>${Math.round(s.winPct*100)}% · Ratio ${fmtRatio(s && s.ratio)}</small></div>`).join('');
+      const rows = statsRows.map(([name,s],i) => `<tr class="rank-row ${i<3?'rank-highlight':''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${teamDisplay(name)}</b></td><td class="score-cell">${Math.round(s.winPct*100)}%</td><td>${fmtRatio(s && s.ratio)}</td><td>${s.mj}</td><td>${s.v}</td><td>${s.d}</td><td>${s.pm}</td></tr>`).join('');
       html += `<section class="ranking-card"><div class="ranking-card-head"><h3>Poule ${pool}</h3><span>${statsRows.length} équipes</span></div><div class="ranking-podium">${topThree}</div><div class="table-scroll"><table class="ranking-table"><tr><th>#</th><th>Équipe</th><th>%V</th><th>Ratio</th><th>MJ</th><th>V</th><th>D</th><th>PM</th></tr>${rows}</table></div></section>`;
     });
     html += `</div></div>`;
