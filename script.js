@@ -6086,122 +6086,220 @@ console.log(window.CSM_BUILD);
   console.log(window.CSM_BUILD);
 })();
 
-/* v20.24 - Affichage BYE / Exempt consolante + masquage des demies incomplètes */
-(function(){
-  window.CSM_BUILD = 'v20.24-bye-consolante-ui';
+/* v20.25 - affichage tableaux complet + ordre lisible
+   - On affiche tous les matchs, même avec À définir.
+   - Ordre forcé : Principal 1/8 -> Quart -> Demi -> 3e place -> Finale,
+     puis Consolante Barrage -> Quart -> Demi -> Finale.
+*/
+window.CSM_BUILD = 'v20.25-tableaux-complets-ordre';
 
-  function escV2024(value){
-    if (typeof escapeHtml === 'function') return escapeHtml(value);
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+function bracketGroupOrderKey_v2025(m) {
+  const bracket = String(m && (m.bracket || m.phase) || '');
+  const round = String(m && m.round || '');
+  const isPrincipal = bracket.includes('Principal') || String(m && m.phase || '').includes('Tableau principal');
+  const isConsolante = bracket.includes('Consolante') || String(m && m.phase || '').includes('Consolante');
+
+  let base = 99;
+  if (isPrincipal) base = 0;
+  else if (isConsolante) base = 100;
+
+  let roundRank = 50;
+  if (round.includes('1/8')) roundRank = 0;
+  else if (round.includes('Barrage')) roundRank = 0;
+  else if (round.includes('Quart')) roundRank = 10;
+  else if (round.includes('Demi')) roundRank = 20;
+  else if (round.includes('3e') || round.includes('3ème') || round.includes('Petite')) roundRank = 30;
+  else if (round.includes('Finale')) roundRank = 40;
+
+  return base + roundRank;
+}
+
+function bracketGroupTitle_v2025(m) {
+  const bracket = String(m && (m.bracket || m.phase) || 'Tableau');
+  const round = String(m && m.round || 'Tour');
+  return `${bracket} — ${round}`;
+}
+
+function renderBrackets() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return;
+
+  const ranking = (typeof globalRanking === 'function') ? globalRanking() : [];
+  const topSeeds = ranking.slice(0,3).map((r,i) => `
+    <div class="global-top-card rank-${i+1}">
+      <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+      <strong>${typeof teamDisplay === 'function' ? teamDisplay(r.name) : (r.name || '')}</strong>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
+    </div>
+  `).join('');
+  rankDiv.innerHTML = `<section class="global-ranking-card">
+    <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+    <div class="global-top3">${topSeeds}</div>
+    <div class="table-scroll"><table class="ranking-table global-ranking-table">
+      <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${typeof teamDisplay === 'function' ? teamDisplay(r.name) : (r.name || '')}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
+    </table></div>
+  </section>`;
+
+  const bracketMatches = (matches || [])
+    .filter(m => m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante')
+    .slice()
+    .sort((a,b) =>
+      bracketGroupOrderKey_v2025(a) - bracketGroupOrderKey_v2025(b) ||
+      (Number(a.match_order || 0) - Number(b.match_order || 0)) ||
+      (Number(a.id || 0) - Number(b.id || 0))
+    );
+
+  if (!bracketMatches.length) {
+    bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+    return;
   }
 
-  function tdV2024(name){
-    if (typeof teamDisplay === 'function') return teamDisplay(name || 'À définir');
-    return escV2024(name || 'À définir');
-  }
-
-  function isDefinedTeamV2024(name){
-    const v = String(name || '').trim();
-    return v && v !== 'À définir' && v.toLowerCase() !== 'bye';
-  }
-
-  function bracketSortV2024(a,b){
-    const order = { 'Principal': 1, 'Consolante': 2 };
-    const round = { 'Barrage': 1, 'Quart': 2, 'Exempt': 3, 'Demi': 4, 'Finale': 5, '3e place': 6, '1/8 finale': 0 };
-    return (order[a.bracket] || 99) - (order[b.bracket] || 99) ||
-      (round[a.round] || 99) - (round[b.round] || 99) ||
-      (Number(a.match_order || 0) - Number(b.match_order || 0));
-  }
-
-  function renderMatchCardV2024(m){
-    return `<div class="card">
-      <span class="seed">Match ${escV2024(m.match_order || '-')} · Terrain ${escV2024(m.court || '-')} · ${escV2024((typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || 'Horaire à définir')}</span><br>
-      <b>${tdV2024(m.team_a || 'À définir')}</b> vs <b>${tdV2024(m.team_b || 'À définir')}</b><br>
-      Gagnant : ${m.winner ? tdV2024(m.winner) : '-'} · ${typeof statusText === 'function' ? statusText(m) : escV2024(m.status || '')}
-    </div>`;
-  }
-
-  function renderByeCardV2024(teamName, matchOrder){
-    return `<div class="card bye-card">
-      <span class="seed">Exempt · BYE consolante${matchOrder ? ' · demi ' + escV2024(matchOrder) : ''}</span><br>
-      <b>${tdV2024(teamName)}</b><br>
-      <span class="status-pill done">Qualifié d'office en demi-finale</span>
-    </div>`;
-  }
-
-  window.renderBrackets = renderBrackets = function(){
-    const rankDiv = document.getElementById('globalRankingView');
-    const bracketDiv = document.getElementById('bracketsView');
-    if (!rankDiv || !bracketDiv) return;
-
-    const ranking = (typeof globalRanking === 'function') ? globalRanking() : [];
-    const topSeeds = ranking.slice(0,3).map((r,i) => `
-      <div class="global-top-card rank-${i+1}">
-        <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-        <strong>${tdV2024(r.name)}</strong>
-        <small>B2 ${escV2024(r.b2Score || '-')} · B1 ${escV2024(r.b1Score || '-')}</small>
-      </div>
-    `).join('');
-    rankDiv.innerHTML = `<section class="global-ranking-card">
-      <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
-      <div class="global-top3">${topSeeds}</div>
-      <div class="table-scroll"><table class="ranking-table global-ranking-table">
-        <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
-        ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${tdV2024(r.name)}</b></td><td>${escV2024(r.b1Score || '-')}</td><td class="score-cell">${escV2024(r.b2Score || '-')}</td></tr>`).join('')}
-      </table></div>
-    </section>`;
-
-    const raw = (matches || []).filter(m => m.bracket).sort(bracketSortV2024);
-    if (!raw.length) {
-      bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
-      return;
+  const groups = [];
+  const groupIndex = new Map();
+  bracketMatches.forEach(m => {
+    const key = bracketGroupTitle_v2025(m);
+    if (!groupIndex.has(key)) {
+      groupIndex.set(key, groups.length);
+      groups.push({ title: key, order: bracketGroupOrderKey_v2025(m), list: [] });
     }
+    groups[groupIndex.get(key)].list.push(m);
+  });
+  groups.sort((a,b) => a.order - b.order || String(a.title).localeCompare(String(b.title)));
 
-    const displayRows = [];
-    const byeRows = [];
+  const displayTeam = (name) => typeof teamDisplay === 'function' ? teamDisplay(name || 'À définir') : (name || 'À définir');
+  bracketDiv.innerHTML = groups.map(group => `
+    <div class="bracket-title">${typeof escapeHtml === 'function' ? escapeHtml(group.title) : group.title}</div>
+    ${group.list.map(m => `<div class="card">
+      <span class="seed">Match ${m.match_order || '-'} · Terrain ${m.court || '-'} · ${(typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || 'Horaire à définir'}</span><br>
+      <b>${displayTeam(m.team_a)}</b> vs <b>${displayTeam(m.team_b)}</b><br>
+      Gagnant : ${m.winner ? displayTeam(m.winner) : '-'} · ${(typeof statusText === 'function' ? statusText(m) : (m.status || ''))}
+    </div>`).join('')}
+  `).join('');
+}
 
-    raw.forEach(m => {
-      const bracket = String(m.bracket || '');
-      const round = String(m.round || '');
-      const aDefined = isDefinedTeamV2024(m.team_a);
-      const bDefined = isDefinedTeamV2024(m.team_b);
+/* v20.26 - ordre tableaux robuste tous formats (23/24/25/26 équipes)
+   Affiche tous les matchs générés, même avec À définir, mais force l'ordre métier :
+   Principal : 1/8 -> Quart -> Demi -> 3e place -> Finale
+   Consolante : Barrage -> Quart -> Demi -> Finale
+*/
+window.CSM_BUILD = 'v20.26-tableaux-ordre-robuste';
 
-      // Consolante avec 7 équipes : le meilleur de consolante est déjà qualifié en demi.
-      // L'ancien affichage montrait une demi "Équipe vs À définir" ; on la remplace par un bloc BYE clair.
-      if (bracket === 'Consolante' && round === 'Demi' && (aDefined !== bDefined)) {
-        byeRows.push({ team: aDefined ? m.team_a : m.team_b, order: m.match_order });
-        return;
-      }
+function normalizeText_v2026(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
 
-      // Masque les demies non jouables tant que les équipes ne sont pas connues.
-      if (round === 'Demi' && (!aDefined || !bDefined)) return;
+function bracketNameRank_v2026(m) {
+  const s = normalizeText_v2026((m && m.bracket) || (m && m.phase) || '');
+  if (s.includes('principal') || s.includes('tableau principal')) return 0;
+  if (s.includes('consolante')) return 1;
+  return 9;
+}
 
-      displayRows.push(m);
-    });
+function roundRank_v2026(m) {
+  const r = normalizeText_v2026((m && m.round) || '');
+  const bRank = bracketNameRank_v2026(m);
 
-    const groups = {};
-    displayRows.forEach(m => {
-      const key = `${m.bracket} — ${m.round}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(m);
-    });
+  // Tableau principal
+  if (bRank === 0) {
+    if (r.includes('1/8') || r.includes('huit')) return 0;
+    if (r.includes('quart')) return 1;
+    if (r.includes('demi')) return 2;
+    if (r.includes('3e') || r.includes('3eme') || r.includes('troisieme') || r.includes('petite')) return 3;
+    if (r.includes('final')) return 4;
+    return 50;
+  }
 
-    let html = Object.entries(groups).map(([title, list]) => `
-      <div class="bracket-title">${escV2024(title)}</div>
-      ${list.map(renderMatchCardV2024).join('')}
-    `).join('');
+  // Consolante
+  if (bRank === 1) {
+    if (r.includes('barrage') || r.includes('prelim')) return 0;
+    if (r.includes('quart')) return 1;
+    if (r.includes('demi')) return 2;
+    if (r.includes('final')) return 3;
+    return 50;
+  }
 
-    if (byeRows.length) {
-      html += `<div class="bracket-title">Consolante — Exempt / BYE</div>` + byeRows.map(b => renderByeCardV2024(b.team, b.order)).join('');
+  return 50;
+}
+
+function bracketGroupTitle_v2026(m) {
+  const bRank = bracketNameRank_v2026(m);
+  const bracket = bRank === 0 ? 'Principal' : (bRank === 1 ? 'Consolante' : String((m && (m.bracket || m.phase)) || 'Tableau'));
+  const round = String((m && m.round) || 'Tour');
+  return `${bracket} — ${round}`;
+}
+
+function renderBrackets() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return;
+
+  const ranking = (typeof globalRanking === 'function') ? globalRanking() : [];
+  const td = (name) => (typeof teamDisplay === 'function') ? teamDisplay(name || 'À définir') : String(name || 'À définir');
+  const esc = (v) => (typeof escapeHtml === 'function') ? escapeHtml(v) : String(v || '');
+  const st = (m) => (typeof statusText === 'function') ? statusText(m) : String((m && m.status) || '');
+  const sched = (m) => (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || 'Horaire à définir';
+
+  const topSeeds = ranking.slice(0,3).map((r,i) => `
+    <div class="global-top-card rank-${i+1}">
+      <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+      <strong>${td(r.name)}</strong>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
+    </div>
+  `).join('');
+
+  rankDiv.innerHTML = `<section class="global-ranking-card">
+    <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+    <div class="global-top3">${topSeeds}</div>
+    <div class="table-scroll"><table class="ranking-table global-ranking-table">
+      <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
+    </table></div>
+  </section>`;
+
+  const bracketMatches = (matches || [])
+    .filter(m => m && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'))
+    .slice()
+    .sort((a,b) =>
+      bracketNameRank_v2026(a) - bracketNameRank_v2026(b) ||
+      roundRank_v2026(a) - roundRank_v2026(b) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  if (!bracketMatches.length) {
+    bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+    return;
+  }
+
+  const groups = [];
+  const groupIndex = new Map();
+  bracketMatches.forEach(m => {
+    const key = bracketGroupTitle_v2026(m);
+    if (!groupIndex.has(key)) {
+      groupIndex.set(key, groups.length);
+      groups.push({
+        title: key,
+        bRank: bracketNameRank_v2026(m),
+        rRank: roundRank_v2026(m),
+        list: []
+      });
     }
+    groups[groupIndex.get(key)].list.push(m);
+  });
 
-    bracketDiv.innerHTML = html || '<div class="card">Aucun tableau généré pour le moment.</div>';
-  };
+  groups.sort((a,b) => a.bRank - b.bRank || a.rRank - b.rRank || String(a.title).localeCompare(String(b.title)));
 
-  console.log(window.CSM_BUILD);
-})();
+  bracketDiv.innerHTML = groups.map(group => `
+    <div class="bracket-title">${esc(group.title)}</div>
+    ${group.list.map(m => `<div class="card">
+      <span class="seed">Match ${m.match_order || '-'} · Terrain ${m.court || '-'} · ${sched(m)}</span><br>
+      <b>${td(m.team_a)}</b> vs <b>${td(m.team_b)}</b><br>
+      Gagnant : ${m.winner ? td(m.winner) : '-'} · ${st(m)}
+    </div>`).join('')}
+  `).join('');
+}
