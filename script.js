@@ -6085,3 +6085,123 @@ console.log(window.CSM_BUILD);
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.24 - Affichage BYE / Exempt consolante + masquage des demies incomplètes */
+(function(){
+  window.CSM_BUILD = 'v20.24-bye-consolante-ui';
+
+  function escV2024(value){
+    if (typeof escapeHtml === 'function') return escapeHtml(value);
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function tdV2024(name){
+    if (typeof teamDisplay === 'function') return teamDisplay(name || 'À définir');
+    return escV2024(name || 'À définir');
+  }
+
+  function isDefinedTeamV2024(name){
+    const v = String(name || '').trim();
+    return v && v !== 'À définir' && v.toLowerCase() !== 'bye';
+  }
+
+  function bracketSortV2024(a,b){
+    const order = { 'Principal': 1, 'Consolante': 2 };
+    const round = { 'Barrage': 1, 'Quart': 2, 'Exempt': 3, 'Demi': 4, 'Finale': 5, '3e place': 6, '1/8 finale': 0 };
+    return (order[a.bracket] || 99) - (order[b.bracket] || 99) ||
+      (round[a.round] || 99) - (round[b.round] || 99) ||
+      (Number(a.match_order || 0) - Number(b.match_order || 0));
+  }
+
+  function renderMatchCardV2024(m){
+    return `<div class="card">
+      <span class="seed">Match ${escV2024(m.match_order || '-')} · Terrain ${escV2024(m.court || '-')} · ${escV2024((typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || 'Horaire à définir')}</span><br>
+      <b>${tdV2024(m.team_a || 'À définir')}</b> vs <b>${tdV2024(m.team_b || 'À définir')}</b><br>
+      Gagnant : ${m.winner ? tdV2024(m.winner) : '-'} · ${typeof statusText === 'function' ? statusText(m) : escV2024(m.status || '')}
+    </div>`;
+  }
+
+  function renderByeCardV2024(teamName, matchOrder){
+    return `<div class="card bye-card">
+      <span class="seed">Exempt · BYE consolante${matchOrder ? ' · demi ' + escV2024(matchOrder) : ''}</span><br>
+      <b>${tdV2024(teamName)}</b><br>
+      <span class="status-pill done">Qualifié d'office en demi-finale</span>
+    </div>`;
+  }
+
+  window.renderBrackets = renderBrackets = function(){
+    const rankDiv = document.getElementById('globalRankingView');
+    const bracketDiv = document.getElementById('bracketsView');
+    if (!rankDiv || !bracketDiv) return;
+
+    const ranking = (typeof globalRanking === 'function') ? globalRanking() : [];
+    const topSeeds = ranking.slice(0,3).map((r,i) => `
+      <div class="global-top-card rank-${i+1}">
+        <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+        <strong>${tdV2024(r.name)}</strong>
+        <small>B2 ${escV2024(r.b2Score || '-')} · B1 ${escV2024(r.b1Score || '-')}</small>
+      </div>
+    `).join('');
+    rankDiv.innerHTML = `<section class="global-ranking-card">
+      <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+      <div class="global-top3">${topSeeds}</div>
+      <div class="table-scroll"><table class="ranking-table global-ranking-table">
+        <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+        ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${tdV2024(r.name)}</b></td><td>${escV2024(r.b1Score || '-')}</td><td class="score-cell">${escV2024(r.b2Score || '-')}</td></tr>`).join('')}
+      </table></div>
+    </section>`;
+
+    const raw = (matches || []).filter(m => m.bracket).sort(bracketSortV2024);
+    if (!raw.length) {
+      bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+      return;
+    }
+
+    const displayRows = [];
+    const byeRows = [];
+
+    raw.forEach(m => {
+      const bracket = String(m.bracket || '');
+      const round = String(m.round || '');
+      const aDefined = isDefinedTeamV2024(m.team_a);
+      const bDefined = isDefinedTeamV2024(m.team_b);
+
+      // Consolante avec 7 équipes : le meilleur de consolante est déjà qualifié en demi.
+      // L'ancien affichage montrait une demi "Équipe vs À définir" ; on la remplace par un bloc BYE clair.
+      if (bracket === 'Consolante' && round === 'Demi' && (aDefined !== bDefined)) {
+        byeRows.push({ team: aDefined ? m.team_a : m.team_b, order: m.match_order });
+        return;
+      }
+
+      // Masque les demies non jouables tant que les équipes ne sont pas connues.
+      if (round === 'Demi' && (!aDefined || !bDefined)) return;
+
+      displayRows.push(m);
+    });
+
+    const groups = {};
+    displayRows.forEach(m => {
+      const key = `${m.bracket} — ${m.round}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+
+    let html = Object.entries(groups).map(([title, list]) => `
+      <div class="bracket-title">${escV2024(title)}</div>
+      ${list.map(renderMatchCardV2024).join('')}
+    `).join('');
+
+    if (byeRows.length) {
+      html += `<div class="bracket-title">Consolante — Exempt / BYE</div>` + byeRows.map(b => renderByeCardV2024(b.team, b.order)).join('');
+    }
+
+    bracketDiv.innerHTML = html || '<div class="card">Aucun tableau généré pour le moment.</div>';
+  };
+
+  console.log(window.CSM_BUILD);
+})();
