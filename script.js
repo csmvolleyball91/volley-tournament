@@ -4292,3 +4292,127 @@ setTimeout(renderSubtitle_v1917_forced, 100);
 setTimeout(renderSubtitle_v1917_forced, 800);
 setInterval(renderSubtitle_v1917_forced, 30000);
 window.CSM_BUILD = 'v19.17-header-fin-estimee-forcee';
+
+/* v19.18 - reset match recalcul classement + libellés sécurité
+   Bug corrigé : un match reseté gardait parfois un score 0-0 compté dans le classement.
+   Désormais, reset match = score_a/score_b à null + status pending ; le classement ne compte que les matchs terminés.
+*/
+
+poolStats = function(phase, pool) {
+  const teamNames = new Set();
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
+    if (m.team_a && m.team_a !== 'À définir') teamNames.add(m.team_a);
+    if (m.team_b && m.team_b !== 'À définir') teamNames.add(m.team_b);
+  });
+
+  const stats = {};
+  [...teamNames].forEach(name => stats[name] = { mj:0, v:0, d:0, diff:0, pm:0, pe:0, score:0 });
+
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => {
+    // IMPORTANT : seuls les matchs vraiment terminés doivent impacter le classement.
+    if (m.status !== 'done') return;
+    if (m.score_a === null || m.score_a === undefined || m.score_b === null || m.score_b === undefined) return;
+    if (!stats[m.team_a] || !stats[m.team_b]) return;
+
+    const scoreA = Number(m.score_a);
+    const scoreB = Number(m.score_b);
+    const da = scoreA - scoreB;
+    const db = scoreB - scoreA;
+
+    stats[m.team_a].mj++; stats[m.team_b].mj++;
+    stats[m.team_a].pm += scoreA; stats[m.team_a].pe += scoreB; stats[m.team_a].diff += da;
+    stats[m.team_b].pm += scoreB; stats[m.team_b].pe += scoreA; stats[m.team_b].diff += db;
+
+    if (scoreA > scoreB) {
+      stats[m.team_a].v++; stats[m.team_a].score += 10000 + da;
+      stats[m.team_b].d++; stats[m.team_b].score += db;
+    } else if (scoreB > scoreA) {
+      stats[m.team_b].v++; stats[m.team_b].score += 10000 + db;
+      stats[m.team_a].d++; stats[m.team_a].score += da;
+    }
+  });
+
+  return Object.entries(stats).sort((a,b) => b[1].score - a[1].score || b[1].diff - a[1].diff || b[1].pm - a[1].pm);
+};
+
+renderAdminMatchReset = function() {
+  const div = document.getElementById('resetMatchAdmin');
+  if (!div || !adminUnlocked) return;
+
+  const eligible = matches
+    .filter(m => m.team_a && m.team_b && m.team_a !== 'À définir' && m.team_b !== 'À définir')
+    .sort((a,b) =>
+      String(a.phase || '').localeCompare(String(b.phase || '')) ||
+      Number(a.court || 999) - Number(b.court || 999) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  if (!eligible.length) {
+    div.innerHTML = '<div class="card">Aucun match disponible à réinitialiser.</div>';
+    return;
+  }
+
+  div.innerHTML = `
+    <div class="forfeit-admin-grid">
+      <label><span>Réinitialiser un seul match</span>
+        <select id="resetMatchSelect">
+          ${eligible.map(m => `<option value="${m.id}">${m.phase || '-'} · T${m.court || '-'} · ${m.team_a} vs ${m.team_b} · ${m.status || 'pending'} ${m.score_a != null || m.score_b != null ? `(${m.score_a == null ? 0 : m.score_a}-${m.score_b == null ? 0 : m.score_b})` : ''}</option>`).join('')}
+        </select>
+      </label>
+      <button class="danger" onclick="adminResetMatch()">Réinitialiser ce match uniquement</button>
+    </div>
+  `;
+};
+
+adminResetMatch = async function() {
+  if (!adminUnlocked) return;
+  const select = document.getElementById('resetMatchSelect');
+  if (!select) return;
+  const m = matches.find(x => String(x.id) === String(select.value));
+  if (!m) return;
+
+  if (!confirm(`Réinitialiser CE MATCH UNIQUEMENT ?\n\n${m.phase || '-'} · Terrain ${m.court || '-'}\n${m.team_a} vs ${m.team_b}\n\nSeul ce match repassera à jouer.\nLe classement sera recalculé sans ce résultat.`)) return;
+
+  const fullPayload = {
+    score_a: null,
+    score_b: null,
+    winner: null,
+    status: 'pending',
+    started_at: null,
+    completed_at: null
+  };
+
+  let result = await client.from('matches').update(fullPayload).eq('id', m.id);
+  if (result.error) {
+    result = await client.from('matches').update({
+      score_a: null,
+      score_b: null,
+      winner: null,
+      status: 'pending'
+    }).eq('id', m.id);
+  }
+
+  if (result.error) {
+    alert('Erreur reset match : ' + result.error.message);
+    return;
+  }
+
+  clearLocalCompletedTime(m.id);
+  if (activeScoreMatchId === m.id) activeScoreMatchId = null;
+  delete matchEditCodes[m.id];
+  const msg = document.getElementById('adminMsg');
+  if (msg) msg.innerText = 'Match réinitialisé ✅ Classement recalculé.';
+  await loadData();
+};
+
+if (typeof resetScores === 'function') {
+  const resetScores_base_v1918 = resetScores;
+  resetScores = async function() {
+    if (!confirm('⚠️ RÉINITIALISER TOUT LE TOURNOI ?\n\nCela efface TOUS les matchs, scores et phases générées, puis recrée uniquement le Brassage 1.\n\nLes noms des équipes sont conservés.')) return;
+    return resetScores_base_v1918();
+  };
+}
+
+window.CSM_BUILD = 'v19.18-reset-match-classement-fix';
