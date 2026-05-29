@@ -5737,3 +5737,143 @@ console.log(window.CSM_BUILD);
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.21 - Fix doublons Brassage 2 / génération tableaux adaptative
+   - Ne bloque plus si B2 a été généré deux fois : on déduplique les matchs par poule + ordre.
+   - Le classement B1/B2 ignore les doublons.
+   - La génération des tableaux utilise directement le classement global dédupliqué, sans repasser par un ancien handler qui attendait 36 matchs.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.21-b2-dedup-tableaux-adaptatifs';
+
+  function expectedAdaptiveMatchCount_v2021(){
+    const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : ((teams || []).length || 24);
+    const courtCount = Number(settings && settings.courts_count) || 6;
+    const sizes = (typeof poolSizesForCount === 'function') ? poolSizesForCount(teamCount, courtCount) : [4,4,4,4,4,4];
+    return sizes.reduce((sum, s) => sum + (Number(s) * (Number(s) - 1)) / 2, 0);
+  }
+
+  function isCompleted_v2021(m){
+    return !!m && m.status === 'done' && m.score_a !== null && m.score_a !== undefined && m.score_b !== null && m.score_b !== undefined;
+  }
+
+  function matchKey_v2021(m){
+    const a = String(m.team_a || '').trim();
+    const b = String(m.team_b || '').trim();
+    const pair = [a,b].sort().join('||');
+    return [m.phase || '', m.pool || '', m.round || '', m.match_order || '', pair].join('##');
+  }
+
+  function betterDuplicate_v2021(current, candidate){
+    if (!current) return candidate;
+    const cDone = isCompleted_v2021(current);
+    const nDone = isCompleted_v2021(candidate);
+    if (nDone && !cDone) return candidate;
+    if (!nDone && cDone) return current;
+    return (Number(candidate.id || 0) > Number(current.id || 0)) ? candidate : current;
+  }
+
+  window.uniquePhaseMatches = function uniquePhaseMatches(phase){
+    const map = new Map();
+    (matches || []).filter(m => m.phase === phase).forEach(m => {
+      const key = matchKey_v2021(m);
+      map.set(key, betterDuplicate_v2021(map.get(key), m));
+    });
+    return Array.from(map.values()).sort((a,b) =>
+      String(a.pool || '').localeCompare(String(b.pool || '')) ||
+      (Number(a.match_order || 0) - Number(b.match_order || 0)) ||
+      (Number(a.id || 0) - Number(b.id || 0))
+    );
+  };
+
+  window.aggregatePhaseStats = aggregatePhaseStats = function(phase){
+    const empty = (typeof statEmptyV2017 === 'function') ? statEmptyV2017 : (typeof statEmpty === 'function' ? statEmpty : () => ({ mj:0,v:0,d:0,pm:0,pe:0,diff:0,winPct:0,ratio:0 }));
+    const finalize = (typeof finalizeStatsV2017 === 'function') ? finalizeStatsV2017 : (typeof finalizeStats === 'function' ? finalizeStats : (s => { s.winPct = s.mj ? s.v / s.mj : 0; s.ratio = s.pe ? s.pm / s.pe : (s.pm ? 999 : 0); }));
+    const stats = {};
+    (typeof activeTeams === 'function' ? activeTeams() : (teams || [])).forEach(t => stats[t.name] = empty());
+    (window.uniquePhaseMatches ? window.uniquePhaseMatches(phase) : (matches || []).filter(m => m.phase === phase)).forEach(m => {
+      if (!isCompleted_v2021(m)) return;
+      if (!stats[m.team_a]) stats[m.team_a] = empty();
+      if (!stats[m.team_b]) stats[m.team_b] = empty();
+      const a = Number(m.score_a), b = Number(m.score_b);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+      stats[m.team_a].mj++; stats[m.team_b].mj++;
+      stats[m.team_a].pm += a; stats[m.team_a].pe += b; stats[m.team_a].diff += a - b;
+      stats[m.team_b].pm += b; stats[m.team_b].pe += a; stats[m.team_b].diff += b - a;
+      if (a > b) { stats[m.team_a].v++; stats[m.team_b].d++; }
+      else if (b > a) { stats[m.team_b].v++; stats[m.team_a].d++; }
+    });
+    Object.values(stats).forEach(finalize);
+    return stats;
+  };
+
+  window.phaseGlobalRanking = phaseGlobalRanking = function(phase){
+    const stats = aggregatePhaseStats(phase);
+    return Object.entries(stats).map(([name,s]) => ({ name, ...s })).sort((a,b)=>
+      (Number(b.winPct || 0)-Number(a.winPct || 0)) ||
+      (Number(b.ratio || 0)-Number(a.ratio || 0)) ||
+      (Number(b.pm || 0)-Number(a.pm || 0)) ||
+      (Number(b.diff || 0)-Number(a.diff || 0)) ||
+      ((typeof teamNumberFromName === 'function' ? teamNumberFromName(a.name) : 0) - (typeof teamNumberFromName === 'function' ? teamNumberFromName(b.name) : 0)) ||
+      String(a.name).localeCompare(String(b.name))
+    );
+  };
+
+  window.globalRanking = globalRanking = function(){
+    const b2 = aggregatePhaseStats('Brassage 2');
+    const b1 = aggregatePhaseStats('Brassage 1');
+    const active = (typeof activeTeams === 'function' ? activeTeams() : (teams || []));
+    const pct = v => Math.round((Number(v) || 0) * 100);
+    const rat = v => Math.round((Number(v) || 0) * 100);
+    return active.map(t => ({
+      name: t.name,
+      b2WinPct: b2[t.name]?.winPct || 0,
+      b2Ratio: b2[t.name]?.ratio || 0,
+      b2Pm: b2[t.name]?.pm || 0,
+      b1WinPct: b1[t.name]?.winPct || 0,
+      b1Ratio: b1[t.name]?.ratio || 0,
+      b1Pm: b1[t.name]?.pm || 0
+    })).sort((a,b) =>
+      (pct(b.b2WinPct) - pct(a.b2WinPct)) ||
+      (rat(b.b2Ratio) - rat(a.b2Ratio)) ||
+      (pct(b.b1WinPct) - pct(a.b1WinPct)) ||
+      (rat(b.b1Ratio) - rat(a.b1Ratio)) ||
+      ((Number(b.b2Pm)||0) - (Number(a.b2Pm)||0)) ||
+      ((Number(b.b1Pm)||0) - (Number(a.b1Pm)||0)) ||
+      ((typeof teamNumberFromName === 'function' ? teamNumberFromName(a.name) : 0) - (typeof teamNumberFromName === 'function' ? teamNumberFromName(b.name) : 0)) ||
+      String(a.name).localeCompare(String(b.name))
+    );
+  };
+
+  window.generateBrackets = generateBrackets = async function(){
+    if (!adminUnlocked) return;
+    const adminMsg = document.getElementById('adminMsg');
+    try {
+      const expected = expectedAdaptiveMatchCount_v2021();
+      const rawB2 = (matches || []).filter(m => m.phase === 'Brassage 2');
+      const uniqueB2 = window.uniquePhaseMatches('Brassage 2');
+      if (uniqueB2.length !== expected) {
+        if (adminMsg) adminMsg.innerText = `Impossible : il faut ${expected} matchs uniques en Brassage 2, trouvés ${uniqueB2.length} (${rawB2.length} lignes en base).`;
+        return;
+      }
+      const unfinished = uniqueB2.filter(m => !isCompleted_v2021(m));
+      if (unfinished.length) {
+        if (adminMsg) adminMsg.innerText = `Impossible : ${unfinished.length} match(s) de Brassage 2 ne sont pas terminés.`;
+        return;
+      }
+      if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+      const rows = (typeof bracketRowsFromRanking === 'function') ? bracketRowsFromRanking(globalRanking()) : [];
+      const del = await client.from('matches').delete().in('phase', ['Tableau principal','Consolante','Tableaux']);
+      if (del.error) throw new Error('suppression anciens tableaux : ' + del.error.message);
+      const ins = await client.from('matches').insert(rows);
+      if (ins.error) throw new Error('création tableaux : ' + ins.error.message);
+      if (adminMsg) adminMsg.innerText = `Tableaux générés ✅ ${rows.length} matchs créés.`;
+      await loadData();
+    } catch(e) {
+      if (adminMsg) adminMsg.innerText = 'Impossible de générer les tableaux : ' + e.message;
+      alert('Impossible de générer les tableaux : ' + e.message);
+    }
+  };
+
+  console.log(window.CSM_BUILD);
+})();
