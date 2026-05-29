@@ -3796,6 +3796,8 @@ resetScores = async function() {
 
     await hardDeleteEveryMatch_v191();
 
+    if (adminMsg) adminMsg.innerText = 'Base vide ✅ vérification des équipes...';
+    await ensureConfiguredTeamsInDb();
     if (adminMsg) adminMsg.innerText = 'Base vide ✅ création du Brassage 1...';
     const rows = generateBrassage1Rows();
     const ins = await client.from('matches').insert(rows);
@@ -4913,8 +4915,27 @@ function getTournamentTeamCount(){
   return n && n > 0 ? n : teams.length;
 }
 function activeTeams(){
-  const count = Math.min(getTournamentTeamCount(), teams.length);
+  const count = getTournamentTeamCount();
   return [...teams].sort((a,b)=>Number(a.id||0)-Number(b.id||0)).slice(0, count);
+}
+async function ensureConfiguredTeamsInDb(){
+  const desired = getTournamentTeamCount();
+  const existingIds = new Set((teams || []).map(t => Number(t.id)));
+  const missing = [];
+  for (let id = 1; id <= desired; id++) {
+    if (!existingIds.has(id)) {
+      missing.push({ id, name: defaultTeamNameByIndex(id), level: 'Loisir', initial_pool: poolLabelForTeamIndex(id, desired) });
+    }
+  }
+  if (missing.length) {
+    const ins = await client.from('teams').insert(missing);
+    if (ins.error) throw new Error('création équipe(s) manquante(s) : ' + ins.error.message);
+  }
+  // On recharge toujours les équipes pour que la génération utilise exactement l'état base.
+  const ref = await client.from('teams').select('*').order('id');
+  if (ref.error) throw new Error('rechargement équipes : ' + ref.error.message);
+  teams = ref.data || [];
+  return activeTeams();
 }
 function poolSizesForCount(count, poolCount){
   poolCount = poolCount || Number(settings && settings.courts_count) || 6;
@@ -5071,7 +5092,7 @@ function generateBrassage1Rows() {
   const rows = [];
   const count = getTournamentTeamCount();
   const list = activeTeams();
-  if (list.length < count) throw new Error(`Il manque ${count-list.length} équipe(s) dans la table teams.`);
+  if (list.length < count) throw new Error(`Il manque ${count-list.length} équipe(s) dans la table teams. Clique sur Sauvegarder noms et niveaux ou vérifie les droits INSERT de la table teams.`);
   const sizes = poolSizesForCount(count, Number(settings && settings.courts_count) || 6);
   const poolNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const pools = balancedPoolsByLevelForB1(list, sizes);
@@ -5358,5 +5379,5 @@ function renderPublicView() {
     '<div class="public-courts premium-public-courts">' + cards + '</div>' +
   '</div>';
 }
-window.CSM_BUILD = 'v20.5-b1-equilibre-niveaux';
+window.CSM_BUILD = 'v20.6-b1-equilibre-niveaux';
 console.log(window.CSM_BUILD);
