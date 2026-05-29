@@ -5038,8 +5038,15 @@ function globalRanking() {
     b1Ratio: b1[t.name]?.ratio || 0,
     b1Pm: b1[t.name]?.pm || 0
   })).sort((a,b) =>
-    b.b2WinPct - a.b2WinPct || b.b2Ratio - a.b2Ratio || b.b2Pm - a.b2Pm ||
-    b.b1WinPct - a.b1WinPct || b.b1Ratio - a.b1Ratio || b.b1Pm - a.b1Pm ||
+    // Tri tableaux : B2 d'abord, puis B1 si B2 est équivalent.
+    // Important : on départage par B1 avant les points marqués B2, sinon deux équipes
+    // avec le même %V et ratio B2 peuvent rester dans un ordre peu compréhensible.
+    b.b2WinPct - a.b2WinPct ||
+    b.b2Ratio - a.b2Ratio ||
+    b.b1WinPct - a.b1WinPct ||
+    b.b1Ratio - a.b1Ratio ||
+    b.b2Pm - a.b2Pm ||
+    b.b1Pm - a.b1Pm ||
     teamNumberFromName(a.name) - teamNumberFromName(b.name) || String(a.name).localeCompare(String(b.name))
   ).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${fmtRatio(r.b2Ratio)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${fmtRatio(r.b1Ratio)}` }));
 }
@@ -5633,11 +5640,11 @@ console.log(window.CSM_BUILD);
   window.CSM_BUILD = 'v20.17-classement-ratio-fix';
 })();
 
-/* v20.18 - Fix génération Brassage 2 adaptative 22-26 équipes
+/* v20.19 - Fix génération Brassage 2 adaptative 22-26 équipes
    Un ancien handler B2 attendait encore 36 matchs. On force ici le handler final.
 */
 (function(){
-  window.CSM_BUILD = 'v20.18-b2-adaptatif-serpentin';
+  window.CSM_BUILD = 'v20.19-b2-adaptatif-serpentin';
 
   function expectedB1MatchCount_v2018(){
     const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : (teams || []).length;
