@@ -5039,6 +5039,34 @@ function renderStandings() {
   });
   div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
 }
+function levelWeightForB1(level){
+  const l = levelShort(level);
+  if (l === 'NAT') return 4;
+  if (l === 'REG') return 3;
+  if (l === 'DEP') return 2;
+  return 1; // Loisir
+}
+function balancedPoolsByLevelForB1(list, sizes){
+  const pools = sizes.map((size, idx) => ({ idx, size, teams: [] }));
+  const teamsByLevel = [...list].sort((a,b) =>
+    levelWeightForB1(b.level) - levelWeightForB1(a.level) || Number(a.id||0) - Number(b.id||0)
+  );
+  for (const team of teamsByLevel) {
+    const lvl = levelShort(team.level) || 'LOISIR';
+    const candidates = pools.filter(p => p.teams.length < p.size);
+    candidates.sort((a,b) => {
+      const aSame = a.teams.filter(t => (levelShort(t.level)||'LOISIR') === lvl).length;
+      const bSame = b.teams.filter(t => (levelShort(t.level)||'LOISIR') === lvl).length;
+      if (aSame !== bSame) return aSame - bSame;
+      const aLoad = a.teams.length / a.size;
+      const bLoad = b.teams.length / b.size;
+      if (aLoad !== bLoad) return aLoad - bLoad;
+      return a.idx - b.idx;
+    });
+    candidates[0].teams.push(team);
+  }
+  return pools.map(p => p.teams);
+}
 function generateBrassage1Rows() {
   const rows = [];
   const count = getTournamentTeamCount();
@@ -5046,9 +5074,9 @@ function generateBrassage1Rows() {
   if (list.length < count) throw new Error(`Il manque ${count-list.length} équipe(s) dans la table teams.`);
   const sizes = poolSizesForCount(count, Number(settings && settings.courts_count) || 6);
   const poolNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-  let idx=0;
-  sizes.forEach((size, pIdx) => {
-    const poolTeams = list.slice(idx, idx+size).map(t=>t.name); idx += size;
+  const pools = balancedPoolsByLevelForB1(list, sizes);
+  pools.forEach((poolTeamsObj, pIdx) => {
+    const poolTeams = poolTeamsObj.map(t => t.name);
     rows.push(...generateRoundRobinRows('Brassage 1', poolNames[pIdx], pIdx+1, poolTeams, settings.start_time));
   });
   return withAccessCodes(assignBalancedRefsInPools(rows, {}), 1);
@@ -5330,5 +5358,5 @@ function renderPublicView() {
     '<div class="public-courts premium-public-courts">' + cards + '</div>' +
   '</div>';
 }
-window.CSM_BUILD = 'v20.4-niveaux-tableaux-public';
+window.CSM_BUILD = 'v20.5-b1-equilibre-niveaux';
 console.log(window.CSM_BUILD);
