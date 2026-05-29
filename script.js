@@ -5171,10 +5171,15 @@ function bracketRowsFromRanking(ranking) {
   } else if (cons.length === 8) {
     [[1,8],[4,5],[3,6],[2,7]].forEach((p,idx)=>rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101+idx, team_a:seed(p[0]), team_b:seed(p[1]), next_match_order:105+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
   } else if (cons.length === 7) {
+    // Consolante 7 équipes : 1er exempt directement en demi, 3 quarts joués, 2 demies visibles.
+    // Q1 : 4 vs 5 -> Demi 105 slot B
+    // Q2 : 3 vs 6 -> Demi 106 slot A
+    // Q3 : 2 vs 7 -> Demi 106 slot B
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'A' }));
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:103, team_a:seed(2), team_b:seed(7), next_match_order:106, next_slot:'B' }));
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:105, team_a:seed(1), team_b:'À définir', next_match_order:107, next_slot:'A' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:106, team_a:'À définir', team_b:'À définir', next_match_order:107, next_slot:'B' }));
   } else if (cons.length === 6) {
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
     rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'B' }));
@@ -6184,7 +6189,7 @@ function renderBrackets() {
    Principal : 1/8 -> Quart -> Demi -> 3e place -> Finale
    Consolante : Barrage -> Quart -> Demi -> Finale
 */
-window.CSM_BUILD = 'v20.26-tableaux-ordre-robuste';
+window.CSM_BUILD = 'v20.27-consolante-7-demies-fix';
 
 function normalizeText_v2026(value) {
   return String(value || '')
