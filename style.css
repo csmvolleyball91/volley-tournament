@@ -2921,3 +2921,101 @@ body {
     text-align: center !important;
   }
 }
+
+/* v19.19 - UI safe patch : onglet actif, noms longs, chrono manuel */
+.nav-grid button {
+  position: relative;
+  transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+.nav-grid button.nav-active {
+  background: var(--club-blue, var(--primary)) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(4,95,211,.24) !important;
+}
+.nav-grid button.nav-active::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 5px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--club-yellow, #ffd21f);
+}
+
+.start-chrono-btn {
+  background: var(--success) !important;
+  color: #fff !important;
+  min-width: 150px !important;
+  white-space: normal !important;
+  line-height: 1.08 !important;
+}
+
+.resume-match-btn.resume-locked {
+  opacity: .62;
+  cursor: not-allowed;
+  background: #64748b !important;
+}
+
+.team-name-fit,
+.team-title,
+.match-select-teams span,
+.launch-referee span,
+.resume-teams,
+.team-cell,
+td,
+th,
+.bracket-team,
+.public-team,
+.public-match-team,
+.public-court-card,
+.card h2,
+.card h3 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.scoreboard-full.scoreboard-polish-k .team-title.team-name-fit {
+  width: 96% !important;
+  max-width: 96% !important;
+  white-space: normal !important;
+  font-size: clamp(18px, 2.8vw, 42px) !important;
+  line-height: 1.03 !important;
+}
+.scoreboard-full.scoreboard-polish-k .team-title .service-ball,
+.scoreboard-full.scoreboard-polish-k .team-title .service-ball-placeholder {
+  flex: 0 0 22px !important;
+}
+
+@media (max-width: 700px) {
+  .nav-grid button:not(.nav-active) {
+    background: #eaf2ff !important;
+    color: var(--club-blue, var(--primary)) !important;
+    box-shadow: none !important;
+  }
+  .nav-grid button.nav-active::after {
+    left: 14px;
+    right: 14px;
+    bottom: 3px;
+    height: 3px;
+  }
+  .scoreboard-full.scoreboard-polish-k .team-title.team-name-fit {
+    font-size: clamp(11px, 3.35vw, 18px) !important;
+    line-height: .98 !important;
+    min-height: 2.8em !important;
+    align-content: center !important;
+  }
+  .scoreboard-full.scoreboard-polish-k .center-controls,
+  .scoreboard-full.scoreboard-polish-k .center-controls-k {
+    width: clamp(86px, 25vw, 112px) !important;
+    max-width: clamp(86px, 25vw, 112px) !important;
+  }
+  .start-chrono-btn,
+  .scoreboard-full.scoreboard-polish-k .finish-btn,
+  .scoreboard-full.scoreboard-polish-k .finish-btn-k {
+    font-size: 9.5px !important;
+    padding: 7px 5px !important;
+    min-width: 0 !important;
+  }
+}

@@ -4416,3 +4416,230 @@ if (typeof resetScores === 'function') {
 }
 
 window.CSM_BUILD = 'v19.18-reset-match-classement-fix';
+
+/* v19.19 - corrections usage terrain : verrouillage match, onglet actif, chrono manuel, noms longs */
+window.CSM_BUILD = 'v19.19-verrou-chrono-manuel-ui';
+
+function setActiveNavButton_v1919(id) {
+  try {
+    document.querySelectorAll('.nav-grid button').forEach(function(btn) {
+      btn.classList.remove('nav-active');
+      const onclick = btn.getAttribute('onclick') || '';
+      if (onclick.indexOf("show('" + id + "')") >= 0 || onclick.indexOf('show("' + id + '")') >= 0) {
+        btn.classList.add('nav-active');
+      }
+      if (id === 'admin' && onclick.indexOf('requestAdminAccess') >= 0) btn.classList.add('nav-active');
+    });
+  } catch(e) {}
+}
+
+const show_base_v1919 = show;
+show = function(id) {
+  show_base_v1919(id);
+  setActiveNavButton_v1919(id);
+};
+
+const requestAdminAccess_base_v1919 = requestAdminAccess;
+requestAdminAccess = function() {
+  requestAdminAccess_base_v1919();
+  if (currentSection === 'admin') setActiveNavButton_v1919('admin');
+};
+
+function isTimedScoreMatch_v1919(m) {
+  return !!m && (String(m.phase || '') === 'Brassage 1' || String(m.phase || '') === 'Brassage 2');
+}
+
+function hasChronoStarted_v1919(m) {
+  return !!(m && getMatchStartedAt(m));
+}
+
+// Important : le chrono ne démarre plus automatiquement à l'ouverture de la saisie.
+ensureMatchChronoStarted = function(m) {
+  if (!m || !m.id) return '';
+  const raw = getMatchStartedAt(m);
+  if (raw) {
+    try { saveLocalStartedTime(m.id, raw); } catch(e) {}
+  }
+  return raw || '';
+};
+
+async function startMatchChrono(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+  if (!canEditMatch(m)) {
+    alert('Saisie verrouillée : seul l’appareil qui a lancé le match peut démarrer le chrono.');
+    return;
+  }
+  if (!isTimedScoreMatch_v1919(m)) return;
+  if (hasChronoStarted_v1919(m)) return;
+
+  const startedAt = new Date().toISOString();
+  let result = await client.from('matches').update({ started_at: startedAt }).eq('id', id);
+  if (result.error) {
+    alert('Erreur démarrage chrono : ' + result.error.message);
+    return;
+  }
+  saveLocalStartedTime(id, startedAt);
+  try { localStorage.setItem('volley_match_started_at_' + id, startedAt); } catch(e) {}
+  activeScoreMatchId = id;
+  await loadData();
+}
+
+// Verrouillage strict : si un match est en cours sur un autre appareil, personne d'autre ne peut l'ouvrir.
+launchMatch = async function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+
+  if (isDoneMatch(m)) {
+    alert('Ce match est déjà terminé. Utilise l’admin si tu dois le corriger.');
+    return;
+  }
+
+  if (isLiveMatchStatus(m)) {
+    if (hasLocalMatchSession(m.id)) {
+      activeScoreMatchId = m.id;
+      renderScoreSection();
+      return;
+    }
+    alert('Ce match est déjà en cours sur un autre appareil.\n\nPour le libérer, il faut passer par Admin > Reset match sécurisé.');
+    return;
+  }
+
+  const otherLive = activeMatchOnCourt(m.court, m.id);
+  if (otherLive) {
+    alert('Terrain ' + (m.court || '-') + ' déjà occupé par : ' + otherLive.team_a + ' vs ' + otherLive.team_b + '.\n\nTermine ce match ou utilise Admin > Reset match sécurisé.');
+    return;
+  }
+
+  const code = askRefCodeForMatch(m);
+  if (!code) return;
+
+  const update = { status: 'live' };
+  if (isBracketMatch(m)) {
+    const refTeam = teamNameFromRefCode(code);
+    if (refTeam) update.referee_team = refTeam;
+  }
+
+  let result = await client.from('matches').update(update).eq('id', id);
+  if (result.error) {
+    alert('Erreur lancement match : ' + result.error.message);
+    return;
+  }
+
+  setLocalMatchSession(id, code);
+  activeScoreMatchId = id;
+  await loadData();
+};
+
+openLiveMatch = function(id) {
+  const m = matches.find(function(x) { return String(x.id) === String(id); });
+  if (!m) return;
+  if (isDoneMatch(m)) {
+    alert('Ce match est terminé. Utilise l’admin si tu dois le corriger.');
+    return;
+  }
+  if (isLiveMatchStatus(m) && !hasLocalMatchSession(m.id)) {
+    alert('Ce match est déjà en cours sur un autre appareil.\n\nPour le libérer, il faut passer par Admin > Reset match sécurisé.');
+    return;
+  }
+  if (!canEditMatch(m)) {
+    const code = askRefCodeForMatch(m);
+    if (!code) return;
+    setLocalMatchSession(m.id, code);
+  }
+  activeScoreMatchId = m.id;
+  renderScoreSection();
+};
+
+renderResumeMatchesCard = function(list) {
+  if (!list || !list.length) return '';
+  return `<div class="card live-matches-card force-resume-card">
+    <div class="section-title-row"><b>Matchs en cours</b><span>${list.length}</span></div>
+    <div class="resume-match-list">
+      ${list.map(function(m) {
+        const score = `${Number(m.score_a || 0)} - ${Number(m.score_b || 0)}`;
+        const local = hasLocalMatchSession(m.id);
+        return `<button class="small-btn resume-live-btn resume-match-btn ${local ? '' : 'resume-locked'}" ${local ? `onclick="openLiveMatch(${m.id})"` : 'disabled'}>
+          <span class="resume-court">Terrain ${m.court || '-'}</span>
+          <span class="resume-teams team-name-fit">${m.team_a} vs ${m.team_b}</span>
+          <span class="resume-score">${score}</span>
+          <span class="resume-action">${local ? 'Reprendre' : 'Occupé'}</span>
+        </button>`;
+      }).join('')}
+    </div>
+  </div>`;
+};
+
+function renderTimedScoreboard_v1919(m) {
+  const locked = !canEditMatch(m);
+  const chronoStarted = hasChronoStarted_v1919(m);
+  const centerAction = locked
+    ? lockedMatchHtml(m)
+    : (chronoStarted
+        ? `${chronoHtml(m)}<button class="danger finish-btn finish-btn-k" onclick="finishMatch(${m.id})">Terminer le match</button>`
+        : `<button class="start-chrono-btn finish-btn-k" onclick="startMatchChrono(${m.id})">Démarrer le chrono</button>`);
+
+  return `
+    <div class="scoreboard-full scoreboard-polish-k scoreboard-v1919">
+      <div class="score-half team-a">
+        <div class="team-title team-name-fit">${m.team_a}${serviceBall(m, 'a')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', 1)"`}>+</button>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', -1)"`}>−</button>
+      </div>
+
+      <div class="center-controls center-controls-k">
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase || ''}</div>
+        ${centerAction}
+      </div>
+
+      <div class="score-half team-b">
+        <div class="team-title team-name-fit">${m.team_b}${serviceBall(m, 'b')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', 1)"`}>+</button>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', -1)"`}>−</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderBracketPointScoreboard_v1919(m) {
+  const locked = !canEditMatch(m);
+  return `
+    <div class="scoreboard-full scoreboard-polish-k scoreboard-tableau-nochrono scoreboard-v1919">
+      <div class="score-half team-a">
+        <div class="team-title team-name-fit">${m.team_a}${serviceBall(m, 'a')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', 1)"`}>+</button>
+        <div class="mega-score">${m.score_a == null ? 0 : m.score_a}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'a', -1)"`}>−</button>
+      </div>
+
+      <div class="center-controls center-controls-k center-controls-nochrono">
+        <div class="mini-meta">T${m.court || '-'} · ${m.phase || ''}${m.round ? ' · ' + m.round : ''}</div>
+        <div class="mini-meta mini-meta-rule">Match en 25 points</div>
+        ${locked ? lockedMatchHtml(m) : `<button class="danger finish-btn finish-btn-k" onclick="finishMatch(${m.id})">Terminer le match</button>`}
+      </div>
+
+      <div class="score-half team-b">
+        <div class="team-title team-name-fit">${m.team_b}${serviceBall(m, 'b')}</div>
+        <button class="score-action top-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', 1)"`}>+</button>
+        <div class="mega-score">${m.score_b == null ? 0 : m.score_b}</div>
+        <button class="score-action bottom-action" ${locked ? 'disabled' : `onclick="changePoint(${m.id}, 'b', -1)"`}>−</button>
+      </div>
+    </div>
+  `;
+}
+
+renderMatchScoreboard = function(m) {
+  if (!m) return '';
+  if (isBracketMatch(m) && !isDoneMatch(m)) {
+    const html = renderBracketPointScoreboard_v1919(m);
+    setTimeout(function(){ updateChronoDisplays(); }, 50);
+    return html;
+  }
+  const html = renderTimedScoreboard_v1919(m);
+  setTimeout(function(){ updateChronoDisplays(); if (hasChronoStarted_v1919(m)) maybeWarnChronoEnded(m); }, 50);
+  return html;
+};
+
+setTimeout(function(){ setActiveNavButton_v1919(currentSection || 'teams'); }, 500);
