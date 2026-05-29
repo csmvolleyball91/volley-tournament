@@ -3034,3 +3034,12 @@ th,
   left: 16px !important;
   right: 16px !important;
 }
+
+
+/* v20 team levels + long team names */
+.team-level-badge{display:inline-flex;align-items:center;justify-content:center;margin-left:6px;padding:2px 6px;border-radius:999px;background:#ffe066;color:#073b82;font-size:.68em;font-weight:800;white-space:nowrap;vertical-align:middle;}
+.team-edit-level{grid-template-columns:80px 1fr 120px;gap:10px;align-items:center;}
+.team-edit-level select{width:100%;padding:10px 12px;border-radius:12px;border:1px solid rgba(7,59,130,.18);font-weight:700;background:#fff;}
+.team-cell b,.ranking-podium-item strong,.match-team-name,.team-name,.score-team-name{overflow-wrap:anywhere;word-break:break-word;line-height:1.05;}
+.admin-warning{padding:10px 12px;border-radius:12px;background:#fff3cd;color:#5f4300;font-weight:700;margin-bottom:10px;}
+@media(max-width:700px){.team-edit-level{grid-template-columns:54px 1fr 88px}.team-level-badge{font-size:.58em;padding:1px 5px;margin-left:3px}.ranking-table th,.ranking-table td{font-size:11px}.team-cell b{font-size:12px}}

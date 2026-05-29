@@ -4851,3 +4851,302 @@ setTimeout(function(){
     }
   } catch(e) {}
 }, 500);
+
+
+/* v20.0 - Poules adaptatives 22-26, niveaux équipes, classement ratio, B2 serpentin */
+const BUILD_V20 = 'v20.0-adaptive-poules-levels-ratio-serpentin';
+function teamLevel(name){
+  const t = teams.find(x => String(x.name) === String(name));
+  return (t && (t.level || t.team_level || t.niveau)) ? String(t.level || t.team_level || t.niveau) : '';
+}
+function levelShort(level){
+  const l = String(level || '').toLowerCase();
+  if (!l) return '';
+  if (l.startsWith('reg') || l.includes('rég')) return 'REG';
+  if (l.startsWith('dep') || l.includes('dép')) return 'DEP';
+  if (l.startsWith('nat')) return 'NAT';
+  if (l.startsWith('loi')) return 'LOISIR';
+  return String(level).toUpperCase();
+}
+function teamDisplay(name){
+  const lvl = levelShort(teamLevel(name));
+  if (!name || name === 'À définir') return name || 'À définir';
+  return `${escapeHtml(name)}${lvl ? ` <span class="team-level-badge">${escapeHtml(lvl)}</span>` : ''}`;
+}
+function teamText(name){
+  const lvl = levelShort(teamLevel(name));
+  return `${name || ''}${lvl ? ' ('+lvl+')' : ''}`;
+}
+function getTournamentTeamCount(){
+  const n = Number(settings && settings.teams_count);
+  return n && n > 0 ? n : teams.length;
+}
+function activeTeams(){
+  const count = Math.min(getTournamentTeamCount(), teams.length);
+  return [...teams].sort((a,b)=>Number(a.id||0)-Number(b.id||0)).slice(0, count);
+}
+function poolSizesForCount(count, poolCount){
+  poolCount = poolCount || Number(settings && settings.courts_count) || 6;
+  const sizes = Array(poolCount).fill(4);
+  let diff = count - 4*poolCount;
+  if (diff > 0) {
+    for (let i=0; i<poolCount && diff>0; i++) { sizes[i]++; diff--; }
+  } else if (diff < 0) {
+    for (let i=poolCount-1; i>=0 && diff<0; i--) { sizes[i]--; diff++; }
+  }
+  return sizes.filter(s => s > 0);
+}
+function expectedRoundRobinMatchesForSizes(sizes){
+  return sizes.reduce((sum,s)=>sum + (s*(s-1))/2, 0);
+}
+function expectedBrassageMatches(){
+  return expectedRoundRobinMatchesForSizes(poolSizesForCount(getTournamentTeamCount(), Number(settings && settings.courts_count) || 6));
+}
+function completedMatch(m){
+  return m && m.status === 'done' && m.score_a !== null && m.score_b !== null;
+}
+function roundRobinPairs(n){
+  if (n === 3) return [[0,1],[1,2],[0,2]];
+  if (n === 4) return [[0,1],[2,3],[0,2],[1,3],[0,3],[1,2]];
+  if (n === 5) return [[0,1],[2,3],[0,2],[1,4],[0,3],[2,4],[0,4],[1,2],[1,3],[3,4]];
+  const pairs=[]; for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) pairs.push([i,j]); return pairs;
+}
+function generateRoundRobinRows(phase, poolName, court, poolTeams, startTime) {
+  const pairs = roundRobinPairs(poolTeams.length);
+  const slotStep = Number(settings.match_duration) + Number(settings.break_duration);
+  return pairs.map((pair, slot) => ({
+    phase,
+    pool: poolName,
+    court,
+    scheduled_time: addMinutes(startTime, slot * slotStep),
+    team_a: poolTeams[pair[0]],
+    team_b: poolTeams[pair[1]],
+    referee_team: null,
+    score_a: null,
+    score_b: null,
+    winner: null,
+    status: 'pending'
+  }));
+}
+function statEmpty(){ return { mj:0, v:0, d:0, pm:0, pe:0, diff:0, winPct:0, ratio:0, score:0 }; }
+function addMatchToStats(stats, m){
+  if (!completedMatch(m)) return;
+  if (!stats[m.team_a]) stats[m.team_a] = statEmpty();
+  if (!stats[m.team_b]) stats[m.team_b] = statEmpty();
+  const a=Number(m.score_a), b=Number(m.score_b);
+  stats[m.team_a].mj++; stats[m.team_b].mj++;
+  stats[m.team_a].pm += a; stats[m.team_a].pe += b; stats[m.team_a].diff += a-b;
+  stats[m.team_b].pm += b; stats[m.team_b].pe += a; stats[m.team_b].diff += b-a;
+  if (a>b) { stats[m.team_a].v++; stats[m.team_b].d++; }
+  if (b>a) { stats[m.team_b].v++; stats[m.team_a].d++; }
+}
+function finalizeStats(s){
+  s.winPct = s.mj ? s.v / s.mj : 0;
+  s.ratio = s.pe > 0 ? s.pm / s.pe : (s.pm > 0 ? 999 : 0);
+  s.score = Math.round(s.winPct * 1000000) + Math.round(s.ratio * 1000) + s.pm;
+  return s;
+}
+function compareStats(a,b){
+  const sa=a[1], sb=b[1];
+  return (sb.winPct - sa.winPct) || (sb.ratio - sa.ratio) || (sb.pm - sa.pm) || (sb.diff - sa.diff) || String(a[0]).localeCompare(String(b[0]));
+}
+function poolStats(phase, pool) {
+  const teamNames = new Set();
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => { teamNames.add(m.team_a); teamNames.add(m.team_b); });
+  const stats = {}; [...teamNames].forEach(name => stats[name] = statEmpty());
+  matches.filter(m => m.phase === phase && m.pool === pool).forEach(m => addMatchToStats(stats,m));
+  Object.values(stats).forEach(finalizeStats);
+  return Object.entries(stats).sort(compareStats);
+}
+function aggregatePhaseStats(phase) {
+  const stats = {}; activeTeams().forEach(t => stats[t.name] = statEmpty());
+  matches.filter(m => m.phase === phase).forEach(m => addMatchToStats(stats,m));
+  Object.values(stats).forEach(finalizeStats);
+  return stats;
+}
+function phaseGlobalRanking(phase){
+  const stats = aggregatePhaseStats(phase);
+  return Object.entries(stats).map(([name,s]) => ({ name, ...s })).sort((a,b)=>
+    (b.winPct-a.winPct) || (b.ratio-a.ratio) || (b.pm-a.pm) || (b.diff-a.diff) || teamNumberFromName(a.name)-teamNumberFromName(b.name) || String(a.name).localeCompare(String(b.name))
+  );
+}
+function globalRanking() {
+  const b2 = aggregatePhaseStats('Brassage 2');
+  const b1 = aggregatePhaseStats('Brassage 1');
+  return activeTeams().map(t => ({
+    name: t.name,
+    b2WinPct: b2[t.name]?.winPct || 0,
+    b2Ratio: b2[t.name]?.ratio || 0,
+    b2Pm: b2[t.name]?.pm || 0,
+    b1WinPct: b1[t.name]?.winPct || 0,
+    b1Ratio: b1[t.name]?.ratio || 0,
+    b1Pm: b1[t.name]?.pm || 0
+  })).sort((a,b) =>
+    b.b2WinPct - a.b2WinPct || b.b2Ratio - a.b2Ratio || b.b2Pm - a.b2Pm ||
+    b.b1WinPct - a.b1WinPct || b.b1Ratio - a.b1Ratio || b.b1Pm - a.b1Pm ||
+    teamNumberFromName(a.name) - teamNumberFromName(b.name) || String(a.name).localeCompare(String(b.name))
+  ).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${r.b2Ratio.toFixed(2)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${r.b1Ratio.toFixed(2)}` }));
+}
+function renderStandings() {
+  const div = document.getElementById('standingsView'); if (!div) return;
+  const phases = [...new Set(matches.map(m => m.phase))].filter(p => String(p).includes('Brassage'));
+  let html = '';
+  phases.forEach(phase => {
+    const pools = [...new Set(matches.filter(m => m.phase === phase).map(m => m.pool))].sort();
+    html += `<div class="ranking-phase"><div class="ranking-phase-title"><span>${phase}</span><small>Classement : % victoires, ratio points marqués/encaissés, puis points marqués</small></div><div class="ranking-grid">`;
+    pools.forEach(pool => {
+      const statsRows = poolStats(phase, pool);
+      const topThree = statsRows.slice(0,3).map(([name,s],i) => `<div class="ranking-podium-item rank-${i+1}"><span class="ranking-medal">${i===0?'🥇':i===1?'🥈':'🥉'}</span><strong>${teamDisplay(name)}</strong><small>${Math.round(s.winPct*100)}% · Ratio ${s.ratio.toFixed(2)}</small></div>`).join('');
+      const rows = statsRows.map(([name,s],i) => `<tr class="rank-row ${i<3?'rank-highlight':''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${teamDisplay(name)}</b></td><td class="score-cell">${Math.round(s.winPct*100)}%</td><td>${s.ratio.toFixed(2)}</td><td>${s.mj}</td><td>${s.v}</td><td>${s.d}</td><td>${s.pm}</td></tr>`).join('');
+      html += `<section class="ranking-card"><div class="ranking-card-head"><h3>Poule ${pool}</h3><span>${statsRows.length} équipes</span></div><div class="ranking-podium">${topThree}</div><div class="table-scroll"><table class="ranking-table"><tr><th>#</th><th>Équipe</th><th>%V</th><th>Ratio</th><th>MJ</th><th>V</th><th>D</th><th>PM</th></tr>${rows}</table></div></section>`;
+    });
+    html += `</div></div>`;
+  });
+  div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
+}
+function generateBrassage1Rows() {
+  const rows = [];
+  const count = getTournamentTeamCount();
+  const list = activeTeams();
+  if (list.length < count) throw new Error(`Il manque ${count-list.length} équipe(s) dans la table teams.`);
+  const sizes = poolSizesForCount(count, Number(settings && settings.courts_count) || 6);
+  const poolNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  let idx=0;
+  sizes.forEach((size, pIdx) => {
+    const poolTeams = list.slice(idx, idx+size).map(t=>t.name); idx += size;
+    rows.push(...generateRoundRobinRows('Brassage 1', poolNames[pIdx], pIdx+1, poolTeams, settings.start_time));
+  });
+  return withAccessCodes(assignBalancedRefsInPools(rows, {}), 1);
+}
+function serpentinePoolsFromRanking(ranking, sizes){
+  const pools = sizes.map(()=>[]); let seed=0;
+  const max = Math.max(...sizes);
+  for(let row=0; row<max; row++){
+    const order = row % 2 === 0 ? [...pools.keys()] : [...pools.keys()].reverse();
+    for(const pi of order){
+      if(seed >= ranking.length) break;
+      if(pools[pi].length < sizes[pi]) pools[pi].push(ranking[seed++].name || ranking[seed-1]);
+    }
+  }
+  return pools;
+}
+async function generateBrassage2() {
+  if (!adminUnlocked) return;
+  const expected = expectedBrassageMatches();
+  const b1Matches = matches.filter(m => m.phase === 'Brassage 1');
+  if (b1Matches.length !== expected) { document.getElementById('adminMsg').innerText = `Impossible : il faut ${expected} matchs en Brassage 1, trouvés ${b1Matches.length}.`; return; }
+  const unfinished = b1Matches.filter(m => !completedMatch(m));
+  if (unfinished.length) { document.getElementById('adminMsg').innerText = `Impossible : ${unfinished.length} match(s) de Brassage 1 ne sont pas terminés.`; return; }
+  if (!confirm('Générer le Brassage 2 en serpentin ? Les matchs Brassage 2 existants seront supprimés.')) return;
+  const ranking = phaseGlobalRanking('Brassage 1');
+  const sizes = poolSizesForCount(getTournamentTeamCount(), Number(settings && settings.courts_count) || 6);
+  const pools = serpentinePoolsFromRanking(ranking, sizes);
+  const startB2 = getBrassage2StartTime();
+  const poolNames = ['G','H','I','J','K','L','M','N'];
+  let rows=[];
+  pools.forEach((poolTeams, idx) => rows.push(...generateRoundRobinRows('Brassage 2', poolNames[idx], idx+1, poolTeams, startB2)));
+  rows = withAccessCodes(assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1')), matches.filter(m=>m.phase==='Brassage 1').length + 1);
+  await client.from('matches').delete().eq('phase', 'Brassage 2');
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : `Brassage 2 généré ✅ Serpentin B1, ${rows.length} matchs créés.`;
+  await loadData();
+}
+function safeSeed(ranking, idx){ return ranking[idx-1] && ranking[idx-1].name ? ranking[idx-1].name : 'À définir'; }
+function bracketRowsFromRanking(ranking) {
+  const rows=[]; const courtsCount=Math.max(1, Number(settings?.courts_count || 6));
+  const courtFor = order => ((Number(order || 1)-1)%courtsCount)+1;
+  const safeRow = row => Object.assign({ court:courtFor(row.match_order || rows.length+1), scheduled_time:null, status:'pending', referee_team:null, access_code:null, score_a:null, score_b:null, winner:null }, row);
+  const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
+  mainPairs.forEach((p,idx)=>rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order:idx+1, team_a:safeSeed(ranking,p[0]), team_b:safeSeed(ranking,p[1]), next_match_order:9+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+  for(let i=0;i<4;i++) rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order:9+i, team_a:'À définir', team_b:'À définir', next_match_order:13+Math.floor(i/2), next_slot:i%2===0?'A':'B' }));
+  for(let i=0;i<2;i++) rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order:13+i, team_a:'À définir', team_b:'À définir', next_match_order:15, next_slot:i===0?'A':'B', loser_next_match_order:16, loser_next_slot:i===0?'A':'B' }));
+  rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order:15, team_a:'À définir', team_b:'À définir' }));
+  rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order:16, team_a:'À définir', team_b:'À définir' }));
+  const cons = ranking.slice(16).map(r=>r.name);
+  const seed = i => cons[i-1] || 'À définir';
+  if (cons.length >= 9) {
+    const extra = cons.length - 8;
+    for(let e=0;e<extra;e++){
+      const high = 8-extra+1+e; const low = cons.length-e;
+      rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Barrage', match_order:100+e, team_a:seed(high), team_b:seed(low), next_match_order:101+e, next_slot: high===8?'B':'A' }));
+    }
+    const qPairs = [[1,8],[4,5],[3,6],[2,7]];
+    qPairs.forEach((p,idx)=>rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101+idx, team_a: p[0] <= 8-extra ? seed(p[0]) : 'À définir', team_b: p[1] <= 8-extra ? seed(p[1]) : 'À définir', next_match_order:105+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+  } else if (cons.length === 8) {
+    [[1,8],[4,5],[3,6],[2,7]].forEach((p,idx)=>rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101+idx, team_a:seed(p[0]), team_b:seed(p[1]), next_match_order:105+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+  } else if (cons.length === 7) {
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'A' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:103, team_a:seed(2), team_b:seed(7), next_match_order:106, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:105, team_a:seed(1), team_b:'À définir', next_match_order:107, next_slot:'A' }));
+  } else if (cons.length === 6) {
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:105, team_a:seed(1), team_b:'À définir', next_match_order:107, next_slot:'A' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:106, team_a:seed(2), team_b:'À définir', next_match_order:107, next_slot:'B' }));
+  }
+  if (cons.length >= 8) {
+    for(let i=0;i<2;i++) rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:105+i, team_a:'À définir', team_b:'À définir', next_match_order:107, next_slot:i===0?'A':'B' }));
+  }
+  if (cons.length >= 2) rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Finale', match_order:107, team_a:'À définir', team_b:'À définir' }));
+  return rows;
+}
+async function generateBrackets() {
+  if (!adminUnlocked) return;
+  const expected = expectedBrassageMatches();
+  const b2Matches = matches.filter(m => m.phase === 'Brassage 2');
+  if (b2Matches.length !== expected) { document.getElementById('adminMsg').innerText = `Impossible : il faut ${expected} matchs en Brassage 2, trouvés ${b2Matches.length}.`; return; }
+  const unfinished = b2Matches.filter(m => !completedMatch(m));
+  if (unfinished.length) { document.getElementById('adminMsg').innerText = `Impossible : ${unfinished.length} match(s) de Brassage 2 ne sont pas terminés.`; return; }
+  if (!confirm('Générer les tableaux ? Les tableaux existants seront supprimés.')) return;
+  const rows = bracketRowsFromRanking(globalRanking());
+  await client.from('matches').delete().in('phase', ['Tableau principal','Consolante']);
+  const { error } = await client.from('matches').insert(rows);
+  document.getElementById('adminMsg').innerText = error ? error.message : `Tableaux générés ✅ ${rows.length} matchs créés.`;
+  await loadData();
+}
+function renderAdmin() {
+  ensureAdminPriorityTools(); if (!settings) return;
+  document.getElementById('cfgStart').value = settings.start_time || '09:30';
+  document.getElementById('cfgDuration').value = settings.match_duration || 12;
+  document.getElementById('cfgBreak').value = settings.break_duration || 3;
+  document.getElementById('cfgRoundBreak').value = settings.break_between_rounds || 15;
+  document.getElementById('cfgCourts').value = settings.courts_count || 6;
+  const cfgTeams = document.getElementById('cfgTeams'); if (cfgTeams) cfgTeams.value = getTournamentTeamCount();
+  const div = document.getElementById('teamsAdmin');
+  if (div) {
+    const desired = getTournamentTeamCount();
+    const missing = Math.max(0, desired - teams.length);
+    div.innerHTML = `${missing ? `<div class="admin-warning">Il manque ${missing} équipe(s) dans la table. Ajoute-les dans Supabase ou via la table teams avant génération.</div>` : ''}` +
+      teams.map(t => `<div class="team-edit team-edit-level"><span>${t.initial_pool || ''}${String(t.id).padStart(2,'0')}</span><input data-team-id="${t.id}" value="${escapeAttr(t.name)}" /><select data-team-level-id="${t.id}"><option value="Loisir" ${levelShort(t.level)==='LOISIR'?'selected':''}>Loisir</option><option value="Dép" ${levelShort(t.level)==='DEP'?'selected':''}>Dép</option><option value="Rég" ${levelShort(t.level)==='REG'?'selected':''}>Rég</option><option value="Nat" ${levelShort(t.level)==='NAT'?'selected':''}>Nat</option></select></div>`).join('');
+  }
+  renderAdminForfeit(); renderAdminMatchReset(); renderAdminScoreCorrections();
+}
+async function saveSettings() {
+  if (!adminUnlocked) return;
+  const payload = { start_time:document.getElementById('cfgStart').value, match_duration:Number(document.getElementById('cfgDuration').value), break_duration:Number(document.getElementById('cfgBreak').value), break_between_rounds:Number(document.getElementById('cfgRoundBreak').value), courts_count:Number(document.getElementById('cfgCourts').value), updated_at:new Date().toISOString() };
+  const cfgTeams = document.getElementById('cfgTeams'); if (cfgTeams) payload.teams_count = Number(cfgTeams.value);
+  const { error } = await client.from('settings').update(payload).eq('id', 1);
+  document.getElementById('adminMsg').innerText = error ? error.message : 'Configuration sauvegardée ✅'; await loadData();
+}
+async function saveTeams() {
+  if (!adminUnlocked) return;
+  const inputs = [...document.querySelectorAll('[data-team-id]')];
+  for (const input of inputs) {
+    const id = Number(input.dataset.teamId); const sel = document.querySelector(`[data-team-level-id="${id}"]`);
+    const payload = { name: input.value };
+    if (sel) payload.level = sel.value;
+    const { error } = await client.from('teams').update(payload).eq('id', id);
+    if (error) { document.getElementById('adminMsg').innerText = 'Erreur sauvegarde équipe : ' + error.message; return; }
+  }
+  document.getElementById('adminMsg').innerText = 'Noms et niveaux équipes sauvegardés ✅'; await loadData();
+}
+function renderPlanning() {
+  const div = document.getElementById('planningView'); if (!div) return;
+  const courtEl=document.getElementById('courtFilter'); const court=courtEl?courtEl.value:'';
+  const phaseEl=document.getElementById('phaseFilter'); const phase=phaseEl?phaseEl.value:'';
+  let list=[...matches]; if(court) list=list.filter(m=>String(m.court)===court); if(phase) list=list.filter(m=>m.phase===phase);
+  list.sort((a,b)=>computedScheduledTime(a).localeCompare(computedScheduledTime(b)) || Number(a.court)-Number(b.court) || (a.id||0)-(b.id||0));
+  div.innerHTML=`<table><tr><th>Heure</th><th>Terrain</th><th>Phase</th><th>Poule</th><th>Match</th><th>Arbitre</th><th>Score</th><th>Statut</th></tr>${list.map(m=>`<tr><td>${computedScheduledTime(m)}</td><td>T${m.court}</td><td>${m.phase}</td><td>${m.pool||'-'}</td><td>#${m.id} ${teamDisplay(m.team_a)} vs ${teamDisplay(m.team_b)}</td><td>${m.referee_team?teamDisplay(m.referee_team):'-'}</td><td>${scoreText(m)}</td><td>${statusText(m)}</td></tr>`).join('')}</table>`;
+}
+console.log(BUILD_V20);
