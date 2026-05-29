@@ -5037,18 +5037,23 @@ function globalRanking() {
     b1WinPct: b1[t.name]?.winPct || 0,
     b1Ratio: b1[t.name]?.ratio || 0,
     b1Pm: b1[t.name]?.pm || 0
-  })).sort((a,b) =>
-    // Tri tableaux : B2 d'abord, puis B1 si B2 est équivalent.
-    // Important : on départage par B1 avant les points marqués B2, sinon deux équipes
-    // avec le même %V et ratio B2 peuvent rester dans un ordre peu compréhensible.
-    b.b2WinPct - a.b2WinPct ||
-    b.b2Ratio - a.b2Ratio ||
-    b.b1WinPct - a.b1WinPct ||
-    b.b1Ratio - a.b1Ratio ||
-    b.b2Pm - a.b2Pm ||
-    b.b1Pm - a.b1Pm ||
-    teamNumberFromName(a.name) - teamNumberFromName(b.name) || String(a.name).localeCompare(String(b.name))
-  ).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${fmtRatio(r.b2Ratio)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${fmtRatio(r.b1Ratio)}` }));
+  })).sort((a,b) => {
+    // Tri tableaux cohérent avec ce qui est affiché à l'écran :
+    // 1) B2 %V affiché, 2) B2 ratio affiché à 2 décimales,
+    // 3) B1 %V affiché, 4) B1 ratio affiché à 2 décimales,
+    // puis points marqués. Cela évite qu'un écart invisible (ex: 1.494 vs 1.486,
+    // tous deux affichés R1.49) empêche le départage B1.
+    const pct = v => Math.round((Number(v) || 0) * 100);
+    const rat = v => Math.round((Number(v) || 0) * 100); // 2 décimales
+    return (pct(b.b2WinPct) - pct(a.b2WinPct)) ||
+      (rat(b.b2Ratio) - rat(a.b2Ratio)) ||
+      (pct(b.b1WinPct) - pct(a.b1WinPct)) ||
+      (rat(b.b1Ratio) - rat(a.b1Ratio)) ||
+      ((Number(b.b2Pm) || 0) - (Number(a.b2Pm) || 0)) ||
+      ((Number(b.b1Pm) || 0) - (Number(a.b1Pm) || 0)) ||
+      (teamNumberFromName(a.name) - teamNumberFromName(b.name)) ||
+      String(a.name).localeCompare(String(b.name));
+  }).map((r,idx)=>({ ...r, rank:idx+1, b2Score:`${Math.round(r.b2WinPct*100)}% · R${fmtRatio(r.b2Ratio)}`, b1Score:`${Math.round(r.b1WinPct*100)}% · R${fmtRatio(r.b1Ratio)}` }));
 }
 function renderStandings() {
   const div = document.getElementById('standingsView'); if (!div) return;
@@ -5644,7 +5649,7 @@ console.log(window.CSM_BUILD);
    Un ancien handler B2 attendait encore 36 matchs. On force ici le handler final.
 */
 (function(){
-  window.CSM_BUILD = 'v20.19-b2-adaptatif-serpentin';
+  window.CSM_BUILD = 'v20.20-fix-tri-tableaux-arrondi';
 
   function expectedB1MatchCount_v2018(){
     const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : (teams || []).length;
