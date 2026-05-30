@@ -1906,15 +1906,11 @@ function renderBrackets() {
 
   bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
     <div class="bracket-title">${title}</div>
-    <div class="bracket-tree">
-    ${list.map(m => {
-      const cls = m.status==='done'?'done':(m.status==='running'?'running':'pending');
-      return `<div class="card bracket-node ${cls}">
+    ${list.map(m => `<div class="card">
       <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${computedScheduledTime(m) || 'Horaire à définir'}</span><br>
       <b>${m.team_a || 'À définir'}</b> vs <b>${m.team_b || 'À définir'}</b><br>
       Gagnant : ${m.winner || '-'} · ${statusText(m)}
-    </div>`}).join('')}
-    </div>
+    </div>`).join('')}
   `).join('');
 }
 
@@ -7497,5 +7493,173 @@ function renderBrackets() {
   window.renderAdmin = renderAdmin = function(){ prevAdmin2037(); try{ renderOrganizerTools2036(); }catch(e){ console.warn('organizer v20.37', e); } };
   const prevAll2037 = window.renderAll || renderAll;
   window.renderAll = renderAll = function(){ prevAll2037(); try{ renderOrganizerTools2036(); }catch(e){ console.warn('organizer v20.37', e); } };
+  console.log(window.CSM_BUILD);
+})();
+
+/* v20.39 - Vrai affichage arbre graphique des tableaux (sans toucher au moteur) */
+(function(){
+  window.CSM_BUILD = 'v20.39-arbre-graphique-tableaux';
+  window.BUILD_V20 = window.CSM_BUILD;
+
+  function esc(v){
+    if (typeof escapeHtml === 'function') return escapeHtml(v);
+    return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+  function td(name){
+    if (typeof teamDisplay === 'function') return teamDisplay(name || 'À définir');
+    return esc(name || 'À définir');
+  }
+  function sched(m){
+    return (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || m.scheduled_time || 'Horaire à définir';
+  }
+  function isDone(m){
+    if (!m) return false;
+    if (typeof completedMatch === 'function') return completedMatch(m);
+    return ['done','completed','finished'].includes(String(m.status||'').toLowerCase()) || !!m.winner;
+  }
+  function isLive(m){
+    return ['live','in_progress','playing','started'].includes(String((m&&m.status)||'').toLowerCase());
+  }
+  function statusClass(m){
+    if (isDone(m)) return 'done';
+    if (isLive(m)) return 'live';
+    return 'pending';
+  }
+  function statusLabel(m){
+    if (isDone(m)) return 'Terminé';
+    if (isLive(m)) return 'En cours';
+    return 'À venir';
+  }
+  function score(m){
+    if (m && m.score_a != null && m.score_b != null) return `${m.score_a} - ${m.score_b}`;
+    return '—';
+  }
+  function norm(v){
+    return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  }
+  function bracketRank(m){
+    const s = norm((m && m.bracket) || (m && m.phase));
+    if (s.includes('principal') || s.includes('tableau principal')) return 0;
+    if (s.includes('consolante')) return 1;
+    return 9;
+  }
+  function roundKey(m){
+    const r = norm((m && m.round) || '');
+    if (bracketRank(m) === 0) {
+      if (r.includes('1/8') || r.includes('huit')) return '1/8 finale';
+      if (r.includes('quart')) return 'Quart';
+      if (r.includes('demi')) return 'Demi';
+      if (r.includes('3e') || r.includes('3eme') || r.includes('petite')) return '3e place';
+      if (r.includes('final')) return 'Finale';
+      return m.round || 'Tour';
+    }
+    if (r.includes('barrage') || r.includes('prelim')) return 'Barrage';
+    if (r.includes('quart')) return 'Quart';
+    if (r.includes('demi')) return 'Demi';
+    if (r.includes('3e') || r.includes('3eme') || r.includes('petite')) return '3e place';
+    if (r.includes('final')) return 'Finale';
+    return m.round || 'Tour';
+  }
+  function roundOrderForBracket(bracketName){
+    if (bracketName === 'Principal') return ['1/8 finale','Quart','Demi','3e place','Finale'];
+    return ['Barrage','Quart','Demi','3e place','Finale'];
+  }
+  function cardHtml(m){
+    const cls = statusClass(m);
+    return `<div class="bracket-tree-match ${cls}">
+      <div class="btm-top"><span>Match ${esc(m.match_order || '-')}</span><span>T${esc(m.court || '-')} · ${esc(sched(m))}</span></div>
+      <div class="btm-team ${m.winner && m.winner === m.team_a ? 'winner' : ''}"><span>${td(m.team_a)}</span><b>${m.score_a != null ? esc(m.score_a) : ''}</b></div>
+      <div class="btm-team ${m.winner && m.winner === m.team_b ? 'winner' : ''}"><span>${td(m.team_b)}</span><b>${m.score_b != null ? esc(m.score_b) : ''}</b></div>
+      <div class="btm-bottom"><span class="btm-status">${statusLabel(m)}</span><span>Score ${score(m)}</span></div>
+    </div>`;
+  }
+  function renderBracketTree(title, list){
+    const order = roundOrderForBracket(title);
+    const byRound = new Map();
+    list.forEach(m => {
+      const rk = roundKey(m);
+      if (!byRound.has(rk)) byRound.set(rk, []);
+      byRound.get(rk).push(m);
+    });
+    byRound.forEach(arr => arr.sort((a,b)=>Number(a.match_order||0)-Number(b.match_order||0)||Number(a.id||0)-Number(b.id||0)));
+    const rounds = order.filter(r => byRound.has(r));
+    // Ajoute à la fin les tours inattendus éventuels, sans les perdre.
+    Array.from(byRound.keys()).forEach(r => { if (!rounds.includes(r)) rounds.push(r); });
+
+    if (!rounds.length) return '';
+    return `<section class="bracket-tree-section bracket-${title.toLowerCase()}">
+      <div class="bracket-tree-head"><h3>${title}</h3><div class="bracket-tree-legend"><span class="l-done">Terminé</span><span class="l-live">En cours</span><span class="l-pending">À venir</span></div></div>
+      <div class="bracket-tree-scroll">
+        <div class="bracket-tree-grid" style="--round-count:${rounds.length}">
+          ${rounds.map((round, idx)=>{
+            const arr = byRound.get(round) || [];
+            return `<div class="bracket-tree-round round-${idx}">
+              <div class="bracket-tree-round-title">${esc(round)}</div>
+              <div class="bracket-tree-round-list count-${arr.length}">
+                ${arr.map(cardHtml).join('')}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </section>`;
+  }
+
+  const previousRenderBrackets2039 = typeof renderBrackets === 'function' ? renderBrackets : null;
+  window.renderBrackets = renderBrackets = function(){
+    const rankDiv = document.getElementById('globalRankingView');
+    const bracketDiv = document.getElementById('bracketsView');
+    if (!rankDiv || !bracketDiv) return;
+
+    // Garde le rendu du classement existant en le laissant se construire, puis remplace seulement la zone tableaux.
+    if (previousRenderBrackets2039) {
+      try { previousRenderBrackets2039(); } catch(e) { console.warn('ancien rendu tableaux ignoré', e); }
+    }
+
+    const all = (matches || []).filter(m => m && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'));
+    if (!all.length) {
+      bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+      return;
+    }
+    const principal = all.filter(m => bracketRank(m) === 0);
+    const consolante = all.filter(m => bracketRank(m) === 1);
+    bracketDiv.innerHTML =
+      `<div class="bracket-tree-note">Affichage arbre : les matchs restent visibles même avec <b>À définir</b>. Les couleurs indiquent l’avancement.</div>` +
+      renderBracketTree('Principal', principal) +
+      renderBracketTree('Consolante', consolante);
+  };
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .bracket-tree-note{margin:10px 0 14px;padding:12px 14px;border:1px solid rgba(11,59,130,.14);background:#f8fbff;border-radius:16px;color:#0b3b82;font-weight:800;}
+    .bracket-tree-section{margin:18px 0 28px;padding:16px;border-radius:24px;background:#fff;box-shadow:0 12px 32px rgba(11,59,130,.08);border:1px solid rgba(11,59,130,.10);}
+    .bracket-tree-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+    .bracket-tree-head h3{margin:0;color:#002b63;font-size:24px;font-weight:950;}
+    .bracket-tree-legend{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:900;}
+    .bracket-tree-legend span{padding:6px 10px;border-radius:999px;border:1px solid rgba(0,0,0,.08);}
+    .l-done{background:#dcfce7;color:#166534}.l-live{background:#ffedd5;color:#9a3412}.l-pending{background:#eef4ff;color:#0b3b82}
+    .bracket-tree-scroll{overflow-x:auto;padding-bottom:8px;}
+    .bracket-tree-grid{display:grid;grid-template-columns:repeat(var(--round-count), minmax(230px, 1fr));gap:34px;min-width:calc(var(--round-count) * 260px);align-items:stretch;}
+    .bracket-tree-round{position:relative;display:flex;flex-direction:column;gap:10px;}
+    .bracket-tree-round:not(:last-child)::after{content:'';position:absolute;right:-25px;top:54px;bottom:24px;width:2px;background:linear-gradient(#ffd21a,#0b60c8);opacity:.55;border-radius:99px;}
+    .bracket-tree-round-title{position:sticky;top:0;z-index:2;background:#ffd21a;color:#002b63;border:1px solid #f4b400;border-radius:999px;padding:8px 12px;text-align:center;font-size:14px;font-weight:950;text-transform:uppercase;letter-spacing:.03em;}
+    .bracket-tree-round-list{display:flex;flex-direction:column;gap:14px;height:100%;justify-content:space-around;min-height:180px;}
+    .bracket-tree-round-list.count-1{justify-content:center}.bracket-tree-round-list.count-2{justify-content:space-evenly}.bracket-tree-round-list.count-3,.bracket-tree-round-list.count-4{justify-content:space-around}
+    .bracket-tree-match{position:relative;border-radius:16px;border:2px solid rgba(11,59,130,.14);background:#fff;padding:10px;box-shadow:0 8px 18px rgba(11,59,130,.08);min-height:116px;}
+    .bracket-tree-round:not(:last-child) .bracket-tree-match::after{content:'';position:absolute;right:-34px;top:50%;width:34px;height:2px;background:#ffd21a;opacity:.75;}
+    .bracket-tree-match.done{border-color:#22c55e;background:linear-gradient(180deg,#f0fdf4,#fff);}
+    .bracket-tree-match.live{border-color:#f97316;background:linear-gradient(180deg,#fff7ed,#fff);}
+    .bracket-tree-match.pending{border-color:#bdd7ff;background:linear-gradient(180deg,#f8fbff,#fff);}
+    .btm-top,.btm-bottom{display:flex;justify-content:space-between;gap:8px;color:#64748b;font-size:11px;font-weight:900;}
+    .btm-top{margin-bottom:8px}.btm-bottom{margin-top:8px;align-items:center;}
+    .btm-team{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:7px 8px;border-radius:10px;font-size:13px;font-weight:950;color:#001f4e;line-height:1.15;}
+    .btm-team + .btm-team{border-top:1px solid rgba(11,59,130,.10);}
+    .btm-team.winner{background:#fff4bf;outline:1px solid rgba(245,183,0,.35);}
+    .btm-team b{font-size:16px;color:#003b7a;}
+    .btm-status{display:inline-flex;border-radius:999px;padding:4px 8px;background:#eef4ff;color:#0b3b82;font-size:11px;}
+    .bracket-tree-match.done .btm-status{background:#dcfce7;color:#166534}.bracket-tree-match.live .btm-status{background:#ffedd5;color:#9a3412}
+    @media(max-width:760px){.bracket-tree-section{padding:12px;border-radius:18px}.bracket-tree-head{align-items:flex-start;flex-direction:column}.bracket-tree-head h3{font-size:20px}.bracket-tree-grid{gap:24px;min-width:calc(var(--round-count) * 235px);grid-template-columns:repeat(var(--round-count), minmax(215px, 1fr));}.bracket-tree-round:not(:last-child)::after{right:-18px}.bracket-tree-round:not(:last-child) .bracket-tree-match::after{right:-24px;width:24px}}
+  `;
+  document.head.appendChild(css);
   console.log(window.CSM_BUILD);
 })();
