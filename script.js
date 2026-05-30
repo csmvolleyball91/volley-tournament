@@ -7002,7 +7002,7 @@ function renderBrackets() {
 
 /* v20.34 - Monitoring tournoi : attente équipes + santé terrains + prévision globale */
 (function(){
-  window.CSM_BUILD = 'v20.34-monitoring-tournoi';
+  window.CSM_BUILD = 'v20.35-monitoring-admin-only';
 
   function h2034(v){
     try { return (window.escapeHtml || function(x){return String(x||'');})(v); } catch(e){ return String(v || ''); }
@@ -7150,15 +7150,16 @@ function renderBrackets() {
     return rows;
   }
   window.renderTournamentMonitoring = function(){
-    const dash = document.getElementById('homeDashboard');
-    if (!dash) return;
+    const panel = document.getElementById('adminPanel');
+    if (!panel) return;
     let card = document.getElementById('tournamentMonitoringCard');
     if (!card) {
       card = document.createElement('div');
       card.id = 'tournamentMonitoringCard';
-      card.className = 'card monitoring-card';
-      const grid = dash.querySelector('.dashboard-grid') || dash;
-      grid.appendChild(card);
+      card.className = 'admin-card admin-card-wide monitoring-card';
+      const anchor = document.getElementById('adminMonitoringAlerts');
+      if (anchor && anchor.parentNode === panel) anchor.insertAdjacentElement('afterend', card);
+      else panel.insertBefore(card, panel.firstChild);
     }
     const waits = waitRows2034();
     const courtRows = courtHealth2034();
@@ -7197,26 +7198,22 @@ function renderBrackets() {
     card.innerHTML = '<div><p class="eyebrow dark">Monitoring</p><h3>État opérationnel</h3><p class="small">' +
       (waitAlerts.length ? ('⚠️ ' + waitAlerts.length + ' équipe(s) attendent depuis plus de 45 min. ') : '✅ Attentes équipes OK. ') +
       (courtAlerts.length ? ('⚠️ ' + courtAlerts.length + ' terrain(s) en retard.') : '✅ Terrains OK.') +
-      '</p></div><button class="admin-big-action" type="button" onclick="show(\'homeDashboard\')">Voir détail</button>';
+      '</p></div><span class="admin-lock-badge">Détail ci-dessous</span>';
   };
 
   const prevAll2034 = window.renderAll || renderAll;
   window.renderAll = renderAll = function(){
     prevAll2034();
-    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring', e); }
     try { renderAdminMonitoringAlerts(); } catch(e) { console.warn('admin monitoring', e); }
+    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring admin', e); }
   };
 
-  const prevDash2034 = window.renderDashboard || renderDashboard;
-  window.renderDashboard = renderDashboard = function(){
-    prevDash2034();
-    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring dashboard', e); }
-  };
 
   const prevAdmin2034 = window.renderAdmin || renderAdmin;
   window.renderAdmin = renderAdmin = function(){
     prevAdmin2034();
     try { renderAdminMonitoringAlerts(); } catch(e) { console.warn('admin monitoring', e); }
+    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring admin', e); }
   };
 
   console.log(window.CSM_BUILD);
