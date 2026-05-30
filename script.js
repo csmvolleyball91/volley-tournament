@@ -7368,3 +7368,130 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.37 - UI confort organisateur dashboard lisible */
+(function(){
+  window.CSM_BUILD = 'v20.37-confort-dashboard';
+  window.__opsTeam2037 = window.__opsTeam2037 || '';
+  window.__opsCourt2037 = window.__opsCourt2037 || '';
+
+  function esc(v){ return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+  function done(m){ return ['done','completed','finished'].includes(String(m && m.status || '').toLowerCase()); }
+  function live(m){ return ['live','in_progress','playing','started'].includes(String(m && m.status || '').toLowerCase()); }
+  function score(m){ return (m && m.score_a != null ? m.score_a : '-') + ' - ' + (m && m.score_b != null ? m.score_b : '-'); }
+  function teamName(t){ return typeof t === 'string' ? t : (t && t.name) || ''; }
+  function activeTeams(){
+    const count = Number((settings && settings.teams_count) || (typeof getTournamentTeamCount === 'function' ? getTournamentTeamCount() : 24) || 24);
+    return (teams || []).slice(0, count);
+  }
+  function phaseOrd(p){ return {'Brassage 1':1,'Brassage 2':2,'Tableau principal':3,'Consolante':4}[p] || 99; }
+  function sortMatch(a,b){
+    const ta = (typeof matchSortTimeMinutes === 'function') ? matchSortTimeMinutes(a) : 99999;
+    const tb = (typeof matchSortTimeMinutes === 'function') ? matchSortTimeMinutes(b) : 99999;
+    return phaseOrd(a.phase)-phaseOrd(b.phase) || ta-tb || Number(a.court||0)-Number(b.court||0) || Number(a.match_order||0)-Number(b.match_order||0) || Number(a.id||0)-Number(b.id||0);
+  }
+  function sortCourt(a,b){
+    function s(m){ return live(m) ? 0 : (!done(m) ? 1 : 2); }
+    return s(a)-s(b) || sortMatch(a,b);
+  }
+  function status(m){
+    if (live(m)) return '<span class="ops-pill-v2037 live">En cours</span>';
+    if (done(m)) return '<span class="ops-pill-v2037 done">Terminé</span>';
+    return '<span class="ops-pill-v2037 pending">À jouer</span>';
+  }
+  function matchLine(m, contextTeam){
+    const role = contextTeam && m.referee_team === contextTeam && m.team_a !== contextTeam && m.team_b !== contextTeam ? 'Arbitre' : (contextTeam && (m.team_a === contextTeam || m.team_b === contextTeam) ? 'Joue' : 'Match');
+    return '<div class="ops-match-card ' + (live(m) ? 'live' : done(m) ? 'done' : '') + '">' +
+      '<div class="ops-match-meta"><b>' + esc(m.phase || '-') + ' · T' + esc(m.court || '-') + '</b><small>' + esc(m.pool ? 'Poule ' + m.pool : (m.round || '')) + ' · ' + esc(role) + '</small></div>' +
+      '<div class="ops-match-teams2">' + esc(m.team_a || 'À définir') + '<span>vs</span>' + esc(m.team_b || 'À définir') + '</div>' +
+      '<div class="ops-match-score2">' + esc(score(m)) + '<br>' + status(m) + '</div>' +
+    '</div>';
+  }
+  function computeStats(name){
+    const played = (matches||[]).filter(function(m){ return m.team_a===name || m.team_b===name; });
+    const doneList = played.filter(done);
+    const liveList = played.filter(live);
+    const next = played.filter(function(m){ return !done(m) && !live(m); }).sort(sortMatch)[0];
+    const refs = (matches||[]).filter(function(m){ return m.referee_team === name; });
+    let wins=0, losses=0;
+    doneList.forEach(function(m){ if (m.winner===name) wins++; else losses++; });
+    return {played:played.length, done:doneList.length, live:liveList.length, next:next, refs:refs.length, refTodo:refs.filter(function(m){return !done(m);}).length, wins:wins, losses:losses};
+  }
+  function teamButtons(filter){
+    const q = String(filter||'').trim().toLowerCase();
+    return activeTeams().filter(function(t){ return !q || teamName(t).toLowerCase().includes(q); }).map(function(t){
+      const n = teamName(t);
+      return '<button class="ops-chip ' + (window.__opsTeam2037===n?'active':'') + '" onclick="selectOpsTeam2037(\'' + esc(n).replace(/\\/g,'\\\\').replace(/'/g,'\\&#039;') + '\')">' + esc(n) + '</button>';
+    }).join('') || '<div class="ops-empty-card">Aucune équipe trouvée</div>';
+  }
+  function renderTeamArea(filter){
+    const wrap = document.getElementById('opsTeamChips2037');
+    if (wrap) wrap.innerHTML = teamButtons(filter);
+  }
+  window.filterOpsTeams2037 = function(){ renderTeamArea(document.getElementById('opsTeamSearch2037')?.value || ''); };
+  window.selectOpsTeam2037 = function(name){
+    window.__opsTeam2037 = String(name || '').replace(/&#039;/g,"'");
+    renderTeamArea(document.getElementById('opsTeamSearch2037')?.value || '');
+    renderOpsTeam2037();
+  };
+  window.selectOpsCourt2037 = function(court){
+    window.__opsCourt2037 = String(court || '');
+    document.querySelectorAll('.ops-chip.terrain').forEach(function(b){ b.classList.toggle('active', String(b.dataset.court||'')===window.__opsCourt2037); });
+    renderOpsCourt2037();
+  };
+  window.renderOpsTeam2037 = function(){
+    const div = document.getElementById('opsTeamResult2037');
+    if (!div) return;
+    const name = window.__opsTeam2037;
+    if (!name) { div.innerHTML = '<div class="ops-empty-card">Choisis une équipe pour voir son historique, son prochain match et ses arbitrages.</div>'; return; }
+    const team = activeTeams().find(function(t){ return teamName(t)===name; }) || {};
+    const related = (matches||[]).filter(function(m){ return m.team_a===name || m.team_b===name || m.referee_team===name; }).sort(sortMatch);
+    const st = computeStats(name);
+    div.innerHTML = '<div class="ops-team-hero"><h4>' + esc(name) + (team.level ? ' <span class="level-badge">' + esc(team.level) + '</span>' : '') + '</h4><div>Vue complète équipe : matchs, arbitrages et suite à jouer</div></div>' +
+      '<div class="ops-kpi-grid"><div class="ops-kpi-card"><span>Terminés</span><b>' + st.done + '</b></div><div class="ops-kpi-card"><span>Victoires</span><b>' + st.wins + '</b></div><div class="ops-kpi-card"><span>Défaites</span><b>' + st.losses + '</b></div><div class="ops-kpi-card"><span>Arbitrages</span><b>' + st.refTodo + '</b></div></div>' +
+      '<div class="ops-section-title">Prochain match</div>' + (st.next ? matchLine(st.next, name) : '<div class="ops-empty-card">Aucun prochain match identifié</div>') +
+      '<div class="ops-section-title">Historique / planning équipe</div><div class="ops-list-scroll-v2037">' + (related.length ? related.map(function(m){ return matchLine(m, name); }).join('') : '<div class="ops-empty-card">Aucun match</div>') + '</div>';
+  };
+  window.renderOpsCourt2037 = function(){
+    const div = document.getElementById('opsCourtResult2037');
+    if (!div) return;
+    const court = Number(window.__opsCourt2037 || 0);
+    if (!court) { div.innerHTML = '<div class="ops-empty-card">Choisis un terrain pour voir les matchs passés, en cours et à venir.</div>'; return; }
+    const list = (matches||[]).filter(function(m){ return Number(m.court)===court; }).sort(sortCourt);
+    const liveL = list.filter(live), pending = list.filter(function(m){return !done(m)&&!live(m);}), doneL = list.filter(done);
+    div.innerHTML = '<div class="ops-court-hero"><h4>Terrain ' + court + '</h4><div>Suivi complet du terrain</div></div>' +
+      '<div class="ops-kpi-grid"><div class="ops-kpi-card"><span>En cours</span><b>' + liveL.length + '</b></div><div class="ops-kpi-card"><span>À venir</span><b>' + pending.length + '</b></div><div class="ops-kpi-card"><span>Terminés</span><b>' + doneL.length + '</b></div><div class="ops-kpi-card"><span>Total</span><b>' + list.length + '</b></div></div>' +
+      (liveL.length ? '<div class="ops-section-title">En cours</div>' + liveL.map(function(m){return matchLine(m);}).join('') : '') +
+      '<div class="ops-section-title">Prochains matchs</div><div class="ops-list-scroll-v2037">' + (pending.length ? pending.slice(0,16).map(function(m){return matchLine(m);}).join('') : '<div class="ops-empty-card">Aucun match à venir</div>') + '</div>' +
+      '<div class="ops-section-title">Derniers terminés</div><div class="ops-list-scroll-v2037">' + (doneL.length ? doneL.slice(-10).reverse().map(function(m){return matchLine(m);}).join('') : '<div class="ops-empty-card">Aucun match terminé</div>') + '</div>';
+  };
+  window.renderOrganizerTools2036 = function(){
+    if (!adminUnlocked) return;
+    const panel = document.getElementById('adminPanel');
+    if (!panel) return;
+    let card = document.getElementById('organizerToolsCard');
+    if (!card) {
+      card = document.createElement('article');
+      card.id = 'organizerToolsCard';
+      const anchor = document.getElementById('tournamentMonitoringCard') || document.getElementById('adminMonitoringAlerts') || panel.firstElementChild;
+      if (anchor) anchor.insertAdjacentElement('afterend', card); else panel.insertBefore(card, panel.firstChild);
+    }
+    card.className = 'admin-card admin-card-wide organizer-tools-card v2037';
+    const courts = Array.from(new Set((matches||[]).map(function(m){return Number(m.court);}).filter(Boolean))).sort(function(a,b){return a-b;});
+    if (!window.__opsTeam2037 && activeTeams()[0]) window.__opsTeam2037 = teamName(activeTeams()[0]);
+    if (!window.__opsCourt2037 && courts[0]) window.__opsCourt2037 = String(courts[0]);
+    card.innerHTML = '<div class="admin-card-head"><div><p class="eyebrow dark">Confort organisateur</p><h3>Recherche équipe & filtre terrain</h3><p class="small">Vue rapide pour répondre aux joueurs et suivre les terrains.</p></div><button onclick="refreshTournamentData2036()">Actualiser données</button></div>' +
+      '<div class="organizer-v2037-layout">' +
+        '<div class="organizer-v2037-block"><h4>🔎 Recherche équipe</h4><p class="organizer-v2037-help">Clique sur une équipe ou tape quelques lettres.</p><input id="opsTeamSearch2037" class="ops-search-v2037" placeholder="Rechercher une équipe..." oninput="filterOpsTeams2037()"><div id="opsTeamChips2037" class="ops-chip-list"></div><div id="opsTeamResult2037" class="ops-result-panel v2037"></div></div>' +
+        '<div class="organizer-v2037-block"><h4>🏟️ Filtre terrain</h4><p class="organizer-v2037-help">Sélectionne un terrain pour voir passé / en cours / futur.</p><div class="ops-chip-list">' + courts.map(function(c){ return '<button class="ops-chip terrain ' + (String(c)===String(window.__opsCourt2037)?'active':'') + '" data-court="' + c + '" onclick="selectOpsCourt2037(' + c + ')">Terrain ' + c + '</button>'; }).join('') + '</div><div id="opsCourtResult2037" class="ops-result-panel v2037"></div></div>' +
+      '</div>';
+    renderTeamArea('');
+    renderOpsTeam2037();
+    renderOpsCourt2037();
+  };
+  const prevAdmin2037 = window.renderAdmin || renderAdmin;
+  window.renderAdmin = renderAdmin = function(){ prevAdmin2037(); try{ renderOrganizerTools2036(); }catch(e){ console.warn('organizer v20.37', e); } };
+  const prevAll2037 = window.renderAll || renderAll;
+  window.renderAll = renderAll = function(){ prevAll2037(); try{ renderOrganizerTools2036(); }catch(e){ console.warn('organizer v20.37', e); } };
+  console.log(window.CSM_BUILD);
+})();
