@@ -7923,3 +7923,430 @@ function getPodiumData(){
    return {first,second,third};
  }catch(e){return null;}
 }
+
+
+
+// v20.46 - Podium final visible + export PNG
+(function(){
+  window.CSM_BUILD = 'v20.46-podium-visible';
+
+  function normalizeText(v){ return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+  function isDone(m){ return String(m && m.status || '').toLowerCase() === 'done' || String(m && m.status || '').toLowerCase() === 'completed'; }
+  function isMainBracket(m){
+    const b = normalizeText(m && m.bracket);
+    const p = normalizeText(m && m.phase);
+    return !b.includes('consol') && !p.includes('consol');
+  }
+  function isFinalRound(m){
+    const r = normalizeText(m && m.round);
+    return r.includes('final') && !r.includes('petite') && !r.includes('3e') && !r.includes('troisieme');
+  }
+  function isThirdPlaceRound(m){
+    const r = normalizeText(m && m.round);
+    return r.includes('petite') || r.includes('3e') || r.includes('troisieme');
+  }
+  function loserOf(m){
+    if (!m || !m.winner) return null;
+    if (m.team_a === m.winner) return m.team_b;
+    if (m.team_b === m.winner) return m.team_a;
+    return null;
+  }
+
+  window.getPodiumData = function(){
+    try {
+      const list = (window.matches || matches || []).filter(isMainBracket);
+      const finalMatch = list.find(m => isFinalRound(m) && m.winner && isDone(m));
+      const thirdMatch = list.find(m => isThirdPlaceRound(m) && m.winner && isDone(m));
+
+      if (!finalMatch || !finalMatch.winner) return null;
+
+      const first = finalMatch.winner;
+      const second = loserOf(finalMatch);
+      const third = thirdMatch && thirdMatch.winner ? thirdMatch.winner : null;
+
+      return {
+        first: first || null,
+        second: second || null,
+        third: third || null,
+        finalDone: !!(first && second),
+        thirdDone: !!third
+      };
+    } catch(e) {
+      console.warn('getPodiumData', e);
+      return null;
+    }
+  };
+
+  function podiumCardHtml(withExport){
+    const p = window.getPodiumData ? window.getPodiumData() : null;
+    if (!p) {
+      return '<div class="podium-final-card podium-pending" id="podiumFinalCard">' +
+        '<div class="podium-final-head"><span>🏆</span><div><b>Podium final</b><small>Disponible après la finale</small></div></div>' +
+        '<div class="podium-final-empty">La finale principale doit être terminée pour afficher le podium.</div>' +
+      '</div>';
+    }
+
+    const thirdLine = p.third
+      ? '<div class="podium-row bronze"><span class="podium-medal">🥉</span><b>' + escapePodiumHtml(p.third) + '</b></div>'
+      : '<div class="podium-row bronze is-missing"><span class="podium-medal">🥉</span><b>Petite finale à terminer</b></div>';
+
+    return '<div class="podium-final-card" id="podiumFinalCard">' +
+      '<div class="podium-final-head"><span>🏆</span><div><b>Podium final</b><small>Tableau principal</small></div>' +
+        (withExport ? '<button class="podium-export-btn" onclick="exportPodiumPng()">Exporter PNG</button>' : '') +
+      '</div>' +
+      '<div class="podium-rows">' +
+        '<div class="podium-row gold"><span class="podium-medal">🥇</span><b>' + escapePodiumHtml(p.first) + '</b></div>' +
+        '<div class="podium-row silver"><span class="podium-medal">🥈</span><b>' + escapePodiumHtml(p.second || 'Finale à terminer') + '</b></div>' +
+        thirdLine +
+      '</div>' +
+    '</div>';
+  }
+
+  function escapePodiumHtml(str){
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function ensurePodiumPublic(){
+    const host = document.getElementById('publicViewContent');
+    if (!host) return;
+    const screen = host.querySelector('.public-tv') || host;
+    if (!screen) return;
+    let card = document.getElementById('publicPodiumFinalCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'publicPodiumFinalCard';
+      card.className = 'public-podium-wrap';
+      const header = screen.querySelector('.public-tv-header');
+      if (header && header.parentNode) header.parentNode.insertBefore(card, header.nextSibling);
+      else screen.insertBefore(card, screen.firstChild);
+    }
+    const p = window.getPodiumData ? window.getPodiumData() : null;
+    // Sur écran public, on n'affiche le podium que quand la finale est terminée.
+    card.innerHTML = p ? podiumCardHtml(false) : '';
+    card.style.display = p ? '' : 'none';
+  }
+
+  function ensurePodiumAdmin(){
+    const admin = document.getElementById('admin');
+    if (!admin || !window.adminUnlocked && typeof adminUnlocked !== 'undefined' && !adminUnlocked) return;
+    let card = document.getElementById('adminPodiumFinalCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'adminPodiumFinalCard';
+      card.className = 'admin-podium-wrap card';
+      const ref = document.getElementById('adminMsg') || admin.querySelector('.card') || admin.firstElementChild;
+      if (ref && ref.parentNode) ref.parentNode.insertBefore(card, ref.nextSibling);
+      else admin.appendChild(card);
+    }
+    card.innerHTML = podiumCardHtml(true);
+  }
+
+  window.exportPodiumPng = function(){
+    const p = window.getPodiumData ? window.getPodiumData() : null;
+    if (!p) { alert('Podium non disponible : termine la finale principale.'); return; }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 700;
+    const ctx = canvas.getContext('2d');
+
+    const grad = ctx.createLinearGradient(0,0,1200,700);
+    grad.addColorStop(0, '#004b9b');
+    grad.addColorStop(0.55, '#0b5bbb');
+    grad.addColorStop(1, '#ffcf22');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,1200,700);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
+    roundRect(ctx, 70, 70, 1060, 560, 36);
+    ctx.fill();
+
+    ctx.fillStyle = '#002b5c';
+    ctx.font = '900 54px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PODIUM FINAL', 600, 155);
+
+    ctx.font = '700 28px Arial, sans-serif';
+    ctx.fillStyle = '#0b5bbb';
+    ctx.fillText('CSM Mennecy Volley - Tournoi', 600, 198);
+
+    drawPodiumLine(ctx, '🥇', p.first || '-', 600, 305, '#ffcf22');
+    drawPodiumLine(ctx, '🥈', p.second || '-', 600, 410, '#cfd8e3');
+    drawPodiumLine(ctx, '🥉', p.third || 'Petite finale à terminer', 600, 515, '#c47a2c');
+
+    ctx.font = '600 22px Arial, sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText(new Date().toLocaleDateString('fr-FR'), 600, 610);
+
+    const a = document.createElement('a');
+    a.download = 'podium-tournoi-csm-volley.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  };
+
+  function drawPodiumLine(ctx, medal, name, x, y, color){
+    ctx.fillStyle = color;
+    roundRect(ctx, 210, y-50, 780, 78, 24);
+    ctx.fill();
+
+    ctx.font = '42px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(medal, 250, y+4);
+
+    ctx.font = '900 36px Arial, sans-serif';
+    ctx.fillStyle = '#002b5c';
+    ctx.textAlign = 'left';
+    const max = 650;
+    let n = String(name || '-');
+    while (ctx.measureText(n).width > max && n.length > 6) n = n.slice(0, -2) + '…';
+    ctx.fillText(n, 330, y+2);
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+
+  const prevRenderAll = window.renderAll || (typeof renderAll !== 'undefined' ? renderAll : null);
+  if (prevRenderAll) {
+    window.renderAll = renderAll = function(){
+      prevRenderAll();
+      try { ensurePodiumPublic(); } catch(e) { console.warn('podium public', e); }
+      try { ensurePodiumAdmin(); } catch(e) { console.warn('podium admin', e); }
+    };
+  }
+
+  const prevRenderPublic = window.renderPublicView || (typeof renderPublicView !== 'undefined' ? renderPublicView : null);
+  if (prevRenderPublic) {
+    window.renderPublicView = renderPublicView = function(){
+      prevRenderPublic();
+      try { ensurePodiumPublic(); } catch(e) { console.warn('podium public render', e); }
+    };
+  }
+
+  const prevRenderAdmin = window.renderAdmin || (typeof renderAdmin !== 'undefined' ? renderAdmin : null);
+  if (prevRenderAdmin) {
+    window.renderAdmin = renderAdmin = function(){
+      prevRenderAdmin();
+      try { ensurePodiumAdmin(); } catch(e) { console.warn('podium admin render', e); }
+    };
+  }
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .podium-final-card{margin:14px 0;padding:18px;border-radius:24px;border:2px solid rgba(255,207,34,.7);background:linear-gradient(135deg,#fff8d7,#ffffff);box-shadow:0 14px 34px rgba(0,43,92,.12)}
+    .podium-final-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;color:#002b5c}
+    .podium-final-head>span{font-size:34px}
+    .podium-final-head b{display:block;font-size:24px;text-transform:uppercase;letter-spacing:.03em}
+    .podium-final-head small{display:block;color:#64748b;font-weight:800;margin-top:2px}
+    .podium-rows{display:grid;gap:10px}
+    .podium-row{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:18px;font-size:21px;color:#002b5c}
+    .podium-row b{font-weight:950}
+    .podium-medal{font-size:30px}
+    .podium-row.gold{background:linear-gradient(90deg,#ffcf22,#fff2aa)}
+    .podium-row.silver{background:linear-gradient(90deg,#e2e8f0,#f8fafc)}
+    .podium-row.bronze{background:linear-gradient(90deg,#fed7aa,#fff7ed)}
+    .podium-row.is-missing{opacity:.7}
+    .podium-export-btn{border:0;border-radius:999px;background:#0b5bbb;color:#fff;font-weight:900;padding:12px 18px;cursor:pointer}
+    .public-podium-wrap .podium-final-card{margin:14px 18px}
+    .public-podium-wrap .podium-final-head b{font-size:30px}
+    .public-podium-wrap .podium-row{font-size:28px;padding:18px 22px}
+    .public-podium-wrap .podium-medal{font-size:38px}
+    @media(max-width:700px){
+      .podium-final-head{align-items:flex-start;flex-direction:column}
+      .podium-export-btn{width:100%}
+      .podium-row{font-size:18px}
+      .public-podium-wrap .podium-row{font-size:20px}
+    }
+  `;
+  document.head.appendChild(css);
+})();
+
+
+
+// v20.47 - Bouton test : remplir tous les tableaux
+(function(){
+  window.CSM_BUILD = 'v20.47-test-remplir-tableaux';
+
+  function norm(v){ return String(v || '').trim(); }
+  function isUnknownTeam(v){
+    const s = norm(v).toLowerCase();
+    return !s || s.includes('à définir') || s.includes('a definir');
+  }
+  function isDoneStatus(m){
+    const s = String(m && m.status || '').toLowerCase();
+    return s === 'done' || s === 'completed';
+  }
+  function isBracketRow(m){
+    const p = String(m && m.phase || '').toLowerCase();
+    const b = String(m && m.bracket || '').toLowerCase();
+    return b.includes('principal') || b.includes('consol') || p.includes('tableau') || p.includes('consol');
+  }
+  function bracketSort(a,b){
+    const br = { 'Principal': 1, 'Tableau principal': 1, 'Consolante': 2 };
+    const ra = roundRank(a), rb = roundRank(b);
+    return (br[a.bracket] || 9) - (br[b.bracket] || 9) ||
+      ra - rb ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      Number(a.id || 0) - Number(b.id || 0);
+  }
+  function roundRank(m){
+    const r = String(m && m.round || '').toLowerCase();
+    if (r.includes('barrage')) return 0;
+    if (r.includes('1/8') || r.includes('8e') || r.includes('huit')) return 1;
+    if (r.includes('quart')) return 2;
+    if (r.includes('demi')) return 3;
+    if (r.includes('3e') || r.includes('petite')) return 4;
+    if (r.includes('final')) return 5;
+    return 9;
+  }
+  function chooseWinner(m){
+    const aKnown = !isUnknownTeam(m.team_a);
+    const bKnown = !isUnknownTeam(m.team_b);
+    if (aKnown && !bKnown) return { winner: m.team_a, loser: m.team_b, side: 'A', scoreA: 25, scoreB: 0 };
+    if (!aKnown && bKnown) return { winner: m.team_b, loser: m.team_a, side: 'B', scoreA: 0, scoreB: 25 };
+    if (!aKnown && !bKnown) return null;
+
+    // Déterministe pour les tests : alternance selon l'ordre du match.
+    const order = Number(m.match_order || m.id || 0);
+    const aWins = order % 2 === 1;
+    const loserScore = 12 + (order % 10);
+    return aWins
+      ? { winner: m.team_a, loser: m.team_b, side: 'A', scoreA: 25, scoreB: loserScore }
+      : { winner: m.team_b, loser: m.team_a, side: 'B', scoreA: loserScore, scoreB: 25 };
+  }
+  async function updateRowLocalAndDb(m, payload){
+    Object.assign(m, payload);
+    const res = await client.from('matches').update(payload).eq('id', m.id);
+    if (res && res.error) throw new Error(res.error.message);
+  }
+  async function propagateLocalAndDb(m, winner, loser){
+    const rows = (window.matches || matches || []);
+    if (m.next_match_order) {
+      const next = rows.find(x =>
+        String(x.bracket || '') === String(m.bracket || '') &&
+        Number(x.match_order) === Number(m.next_match_order)
+      );
+      if (next) {
+        const payload = {};
+        if (m.next_slot === 'A') payload.team_a = winner;
+        if (m.next_slot === 'B') payload.team_b = winner;
+        if (Object.keys(payload).length) await updateRowLocalAndDb(next, payload);
+      }
+    }
+    if (m.loser_next_match_order) {
+      const nextLoser = rows.find(x =>
+        String(x.bracket || '') === String(m.bracket || '') &&
+        Number(x.match_order) === Number(m.loser_next_match_order)
+      );
+      if (nextLoser) {
+        const payload = {};
+        if (m.loser_next_slot === 'A') payload.team_a = loser;
+        if (m.loser_next_slot === 'B') payload.team_b = loser;
+        if (Object.keys(payload).length) await updateRowLocalAndDb(nextLoser, payload);
+      }
+    }
+  }
+
+  window.adminFillAllBracketMatches = async function(){
+    if (typeof adminUnlocked !== 'undefined' && !adminUnlocked) {
+      if (typeof requestAdminAccess === 'function') requestAdminAccess();
+      return;
+    }
+
+    if (!confirm('⚠️ TEST UNIQUEMENT\n\nCette action va remplir tous les matchs des tableaux Principal + Consolante avec des scores fictifs.\n\nContinuer ?')) return;
+
+    const msg = document.getElementById('adminMsg');
+    try {
+      let rows = (window.matches || matches || []).filter(isBracketRow).sort(bracketSort);
+      if (!rows.length) {
+        alert('Aucun match de tableau trouvé. Génère les tableaux avant de lancer ce test.');
+        return;
+      }
+
+      let filled = 0;
+      let safety = 0;
+      let changed = true;
+
+      while (changed && safety < 30) {
+        safety++;
+        changed = false;
+        rows = (window.matches || matches || []).filter(isBracketRow).sort(bracketSort);
+
+        for (const m of rows) {
+          if (isDoneStatus(m)) continue;
+          const pick = chooseWinner(m);
+          if (!pick) continue;
+
+          const completedAt = new Date().toISOString();
+          const payload = {
+            score_a: pick.scoreA,
+            score_b: pick.scoreB,
+            winner: pick.winner,
+            status: 'done',
+            completed_at: completedAt
+          };
+
+          await updateRowLocalAndDb(m, payload);
+          await propagateLocalAndDb(m, pick.winner, pick.loser);
+          filled++;
+          changed = true;
+        }
+      }
+
+      await loadData();
+      if (msg) msg.innerText = 'Test tableaux terminé ✅ ' + filled + ' match(s) remplis.';
+      alert('✅ Tous les tableaux ont été simulés (' + filled + ' match(s) remplis).');
+    } catch(e) {
+      console.error('adminFillAllBracketMatches', e);
+      if (msg) msg.innerText = 'Erreur test tableaux : ' + e.message;
+      alert('Erreur test tableaux : ' + e.message);
+    }
+  };
+
+  function ensureFillBracketsButton(){
+    const panel = document.getElementById('adminPanel') || document.getElementById('admin');
+    if (!panel) return;
+    if (document.getElementById('fillAllBracketsTestBtn')) return;
+
+    const card = document.createElement('div');
+    card.className = 'admin-card test-brackets-card';
+    card.innerHTML =
+      '<div class="admin-card-head"><div><p class="eyebrow dark">Tests</p><h3>Simulation tableaux</h3></div><span class="admin-action-badge reset-badge">Test</span></div>' +
+      '<p class="small">Remplit tous les matchs du tableau principal et de la consolante avec des résultats fictifs. À utiliser uniquement pour tester le podium, les exports et l’écran public.</p>' +
+      '<button id="fillAllBracketsTestBtn" class="admin-big-action" onclick="adminFillAllBracketMatches()">Remplir tous les tableaux</button>';
+
+    const anchor = document.getElementById('adminMsg');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(card, anchor.nextSibling);
+    else panel.insertBefore(card, panel.firstChild);
+  }
+
+  const prevRenderAdminV2047 = window.renderAdmin || (typeof renderAdmin !== 'undefined' ? renderAdmin : null);
+  if (prevRenderAdminV2047) {
+    window.renderAdmin = renderAdmin = function(){
+      prevRenderAdminV2047();
+      try { ensureFillBracketsButton(); } catch(e) { console.warn('fill brackets button', e); }
+    };
+  }
+  const prevRenderAllV2047 = window.renderAll || (typeof renderAll !== 'undefined' ? renderAll : null);
+  if (prevRenderAllV2047) {
+    window.renderAll = renderAll = function(){
+      prevRenderAllV2047();
+      try { ensureFillBracketsButton(); } catch(e) { console.warn('fill brackets button all', e); }
+    };
+  }
+
+  const css = document.createElement('style');
+  css.textContent = '.test-brackets-card{border-left:6px solid #f59e0b}.test-brackets-card .admin-big-action{background:#f59e0b;color:#082f49;font-weight:950}';
+  document.head.appendChild(css);
+})();
