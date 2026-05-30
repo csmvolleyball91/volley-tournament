@@ -6999,3 +6999,225 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.34 - Monitoring tournoi : attente équipes + santé terrains + prévision globale */
+(function(){
+  window.CSM_BUILD = 'v20.34-monitoring-tournoi';
+
+  function h2034(v){
+    try { return (window.escapeHtml || function(x){return String(x||'');})(v); } catch(e){ return String(v || ''); }
+  }
+  function status2034(m){ return String((m && m.status) || '').toLowerCase().trim(); }
+  function done2034(m){ return ['done','completed','finished','closed','termine','terminé'].indexOf(status2034(m)) >= 0; }
+  function live2034(m){
+    const s = status2034(m);
+    return ['live','active','in_progress','started','ongoing','running','en_cours','en cours','in progress','launched','lance','lancé','saisie'].indexOf(s) >= 0 || s.indexOf('cours') >= 0 || s.indexOf('progress') >= 0;
+  }
+  function real2034(m){
+    const a = String((m && m.team_a) || '').trim();
+    const b = String((m && m.team_b) || '').trim();
+    return !!(m && a && b && a !== 'À définir' && b !== 'À définir' && a !== 'A définir' && b !== 'A définir');
+  }
+  function hmToMin2034(v){
+    const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  }
+  function minToHm2034(min){
+    min = Math.max(0, Math.round(Number(min || 0))) % (24*60);
+    return String(Math.floor(min / 60)).padStart(2,'0') + ':' + String(min % 60).padStart(2,'0');
+  }
+  function nowMin2034(){ const d = new Date(); return d.getHours()*60 + d.getMinutes(); }
+  function dtToMin2034(v){
+    if (!v) return null;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return null;
+    return d.getHours()*60 + d.getMinutes();
+  }
+  function elapsedMinutes2034(v){
+    if (!v) return null;
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return null;
+    return Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  }
+  function activeTeamNames2034(){
+    const configured = Number(settings && (settings.teams_count || settings.team_count || settings.nb_teams || settings.nbTeams));
+    const n = configured || (Array.isArray(teams) ? teams.length : 0);
+    const base = (teams || []).slice().sort(function(a,b){ return Number(a.id || 0) - Number(b.id || 0); }).slice(0, n);
+    const names = base.map(function(t){ return String(t.name || '').trim(); }).filter(Boolean);
+    if (names.length) return names;
+    const set = new Set();
+    (matches || []).forEach(function(m){ if (m.team_a && !String(m.team_a).includes('définir')) set.add(m.team_a); if (m.team_b && !String(m.team_b).includes('définir')) set.add(m.team_b); });
+    return Array.from(set);
+  }
+  function phaseRows2034(phase){ return (matches || []).filter(function(m){ return m.phase === phase && real2034(m); }); }
+  function currentPhase2034(){
+    const phases = ['Brassage 1','Brassage 2'];
+    for (const p of phases) {
+      const rows = phaseRows2034(p);
+      if (rows.length && rows.some(function(m){ return !done2034(m); })) return p;
+    }
+    const table = (matches || []).filter(function(m){ return real2034(m) && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'); });
+    if (table.length && table.some(function(m){ return !done2034(m); })) return 'Tableaux';
+    return 'Tournoi terminé';
+  }
+  function matchStart2034(m){
+    return (m && (m.started_at || m.start_actual || m.startedAt)) || '';
+  }
+  function matchEnd2034(m){ return (m && (m.completed_at || m.finished_at || m.done_at || m.completed_time || m.updated_at)) || ''; }
+  function observedAvgDuration2034(phase){
+    const rows = (matches || []).filter(function(m){ return real2034(m) && (!phase || (phase === 'Tableaux' ? (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante') : m.phase === phase)) && done2034(m); });
+    const durations = rows.map(function(m){
+      const s = matchStart2034(m), e = matchEnd2034(m);
+      const sd = s ? new Date(s) : null, ed = e ? new Date(e) : null;
+      if (!sd || !ed || isNaN(sd.getTime()) || isNaN(ed.getTime())) return null;
+      const min = Math.round((ed.getTime() - sd.getTime())/60000);
+      return (min >= 3 && min <= 60) ? min : null;
+    }).filter(function(x){ return x != null; });
+    if (durations.length) {
+      durations.sort(function(a,b){ return a-b; });
+      const mid = Math.floor(durations.length/2);
+      return durations.length % 2 ? durations[mid] : Math.round((durations[mid-1] + durations[mid]) / 2);
+    }
+    const configured = Number(settings && settings.match_duration ? settings.match_duration : 12) + Number(settings && settings.break_duration ? settings.break_duration : 3);
+    return Math.max(8, configured || 15);
+  }
+  function estimatePhaseFinish2034(phase, baseMin){
+    const courts = Number(settings && settings.courts_count ? settings.courts_count : 6) || 6;
+    let rows;
+    if (phase === 'Tableaux') rows = (matches || []).filter(function(m){ return real2034(m) && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'); });
+    else rows = phaseRows2034(phase);
+    if (!rows.length) return null;
+    const remaining = rows.filter(function(m){ return !done2034(m); }).length;
+    if (!remaining) return baseMin || nowMin2034();
+    const avg = observedAvgDuration2034(phase);
+    const waves = Math.ceil(remaining / courts);
+    return (baseMin || nowMin2034()) + waves * avg;
+  }
+  function tournamentForecast2034(){
+    const now = nowMin2034();
+    const b1Rows = phaseRows2034('Brassage 1');
+    const b2Rows = phaseRows2034('Brassage 2');
+    const tRows = (matches || []).filter(function(m){ return real2034(m) && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'); });
+    let cursor = now;
+    const out = [];
+    if (b1Rows.length) { const e = estimatePhaseFinish2034('Brassage 1', cursor); out.push({label:'B1', value:e}); cursor = Math.max(cursor, e || cursor); }
+    if (b2Rows.length) { const e = estimatePhaseFinish2034('Brassage 2', cursor); out.push({label:'B2', value:e}); cursor = Math.max(cursor, e || cursor); }
+    if (tRows.length) { const e = estimatePhaseFinish2034('Tableaux', cursor); out.push({label:'Tableaux', value:e}); cursor = Math.max(cursor, e || cursor); }
+    return out;
+  }
+  function waitRows2034(){
+    const names = activeTeamNames2034();
+    const start = hmToMin2034(settings && settings.start_time) || nowMin2034();
+    return names.map(function(name){
+      const teamMatches = (matches || []).filter(function(m){ return real2034(m) && (m.team_a === name || m.team_b === name); });
+      const running = teamMatches.find(live2034);
+      if (running) return { name:name, label:'en cours', minutes:0, cls:'ok', detail:'Terrain ' + (running.court || '-') };
+      const done = teamMatches.filter(done2034).sort(function(a,b){ return (new Date(matchEnd2034(b) || 0)) - (new Date(matchEnd2034(a) || 0)); });
+      let minutes, detail;
+      if (done.length && matchEnd2034(done[0])) {
+        minutes = elapsedMinutes2034(matchEnd2034(done[0]));
+        detail = 'Dernier match : ' + (typeof formatTime === 'function' ? formatTime(matchEnd2034(done[0])) : matchEnd2034(done[0]));
+      } else {
+        minutes = Math.max(0, nowMin2034() - start);
+        detail = 'Pas encore joué';
+      }
+      const cls = minutes > 45 ? 'danger' : (minutes >= 30 ? 'warn' : 'ok');
+      return { name:name, minutes:minutes, label:minutes + ' min', cls:cls, detail:detail };
+    }).sort(function(a,b){ return (b.minutes || 0) - (a.minutes || 0); });
+  }
+  function courtHealth2034(){
+    const courts = Number(settings && settings.courts_count ? settings.courts_count : 6) || 6;
+    const avg = observedAvgDuration2034(currentPhase2034());
+    const now = nowMin2034();
+    const rows = [];
+    for (let c=1; c<=courts; c++) {
+      const live = (matches || []).find(function(m){ return real2034(m) && Number(m.court) === c && live2034(m); });
+      if (live) {
+        const started = matchStart2034(live);
+        const elapsed = elapsedMinutes2034(started) || 0;
+        const late = Math.max(0, elapsed - avg);
+        rows.push({ court:c, status:'En cours', late:late, cls: late > 10 ? 'danger' : (late > 5 ? 'warn' : 'ok'), detail: h2034(live.team_a) + ' vs ' + h2034(live.team_b) });
+        continue;
+      }
+      const next = (matches || []).filter(function(m){ return real2034(m) && Number(m.court) === c && !done2034(m); }).sort(function(a,b){ return Number(a.match_order||0)-Number(b.match_order||0) || Number(a.id||0)-Number(b.id||0); })[0];
+      if (!next) { rows.push({court:c,status:'Terminé',late:0,cls:'ok',detail:'Aucun match restant'}); continue; }
+      const sched = (typeof computedScheduledTime === 'function' ? computedScheduledTime(next) : '') || next.scheduled_time || '';
+      const sm = hmToMin2034(sched);
+      const late = sm == null ? 0 : Math.max(0, now - sm);
+      rows.push({ court:c, status: late ? ('+' + late + ' min') : 'OK', late:late, cls: late > 15 ? 'danger' : (late > 5 ? 'warn' : 'ok'), detail: h2034(next.team_a) + ' vs ' + h2034(next.team_b) });
+    }
+    return rows;
+  }
+  window.renderTournamentMonitoring = function(){
+    const dash = document.getElementById('homeDashboard');
+    if (!dash) return;
+    let card = document.getElementById('tournamentMonitoringCard');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'tournamentMonitoringCard';
+      card.className = 'card monitoring-card';
+      const grid = dash.querySelector('.dashboard-grid') || dash;
+      grid.appendChild(card);
+    }
+    const waits = waitRows2034();
+    const courtRows = courtHealth2034();
+    const forecast = tournamentForecast2034();
+    const waitAlerts = waits.filter(function(w){ return w.minutes > 45; }).length;
+    const courtAlerts = courtRows.filter(function(c){ return c.late > 15; }).length;
+    const topWaits = waits.slice(0, 6);
+    const final = forecast.length ? forecast[forecast.length-1].value : null;
+    card.innerHTML = '<div class="section-title-row"><b>Monitoring tournoi</b><span>' + (waitAlerts || courtAlerts ? '⚠️ ' + (waitAlerts + courtAlerts) + ' alerte(s)' : 'OK') + '</span></div>' +
+      '<div class="monitoring-alerts">' +
+        (waitAlerts ? '<span class="pill danger">' + waitAlerts + ' équipe(s) &gt; 45 min</span>' : '<span class="pill ok">Attentes OK</span>') +
+        (courtAlerts ? '<span class="pill danger">' + courtAlerts + ' terrain(s) en retard</span>' : '<span class="pill ok">Terrains OK</span>') +
+        (final ? '<span class="pill info">Fin tournoi estimée : ' + minToHm2034(final) + '</span>' : '') +
+      '</div>' +
+      '<div class="monitoring-grid">' +
+        '<div><h4>Équipes en attente</h4><div class="mini-list">' + topWaits.map(function(w){ return '<div class="mini-row ' + w.cls + '"><span><b>' + h2034(w.name) + '</b><small>' + h2034(w.detail) + '</small></span><strong>' + h2034(w.label) + '</strong></div>'; }).join('') + '</div></div>' +
+        '<div><h4>Santé terrains</h4><div class="mini-list">' + courtRows.map(function(c){ return '<div class="mini-row ' + c.cls + '"><span><b>T' + c.court + ' · ' + h2034(c.status) + '</b><small>' + c.detail + '</small></span></div>'; }).join('') + '</div></div>' +
+        '<div><h4>Prévision globale</h4><div class="mini-list forecast-list">' + (forecast.length ? forecast.map(function(f){ return '<div class="mini-row info"><span><b>' + h2034(f.label) + '</b></span><strong>' + minToHm2034(f.value) + '</strong></div>'; }).join('') : '<div class="mini-row info"><span>Aucune phase active</span></div>') + '</div></div>' +
+      '</div>';
+  };
+
+  window.renderAdminMonitoringAlerts = function(){
+    const panel = document.getElementById('adminPanel');
+    if (!panel) return;
+    let card = document.getElementById('adminMonitoringAlerts');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'adminMonitoringAlerts';
+      card.className = 'admin-hero-card monitoring-admin-alerts';
+      panel.insertBefore(card, panel.firstChild);
+    }
+    const waits = waitRows2034();
+    const courts = courtHealth2034();
+    const waitAlerts = waits.filter(function(w){ return w.minutes > 45; });
+    const courtAlerts = courts.filter(function(c){ return c.late > 15; });
+    card.innerHTML = '<div><p class="eyebrow dark">Monitoring</p><h3>État opérationnel</h3><p class="small">' +
+      (waitAlerts.length ? ('⚠️ ' + waitAlerts.length + ' équipe(s) attendent depuis plus de 45 min. ') : '✅ Attentes équipes OK. ') +
+      (courtAlerts.length ? ('⚠️ ' + courtAlerts.length + ' terrain(s) en retard.') : '✅ Terrains OK.') +
+      '</p></div><button class="admin-big-action" type="button" onclick="show(\'homeDashboard\')">Voir détail</button>';
+  };
+
+  const prevAll2034 = window.renderAll || renderAll;
+  window.renderAll = renderAll = function(){
+    prevAll2034();
+    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring', e); }
+    try { renderAdminMonitoringAlerts(); } catch(e) { console.warn('admin monitoring', e); }
+  };
+
+  const prevDash2034 = window.renderDashboard || renderDashboard;
+  window.renderDashboard = renderDashboard = function(){
+    prevDash2034();
+    try { renderTournamentMonitoring(); } catch(e) { console.warn('monitoring dashboard', e); }
+  };
+
+  const prevAdmin2034 = window.renderAdmin || renderAdmin;
+  window.renderAdmin = renderAdmin = function(){
+    prevAdmin2034();
+    try { renderAdminMonitoringAlerts(); } catch(e) { console.warn('admin monitoring', e); }
+  };
+
+  console.log(window.CSM_BUILD);
+})();
