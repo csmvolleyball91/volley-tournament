@@ -7498,7 +7498,7 @@ function renderBrackets() {
 
 /* v20.39 - Vrai affichage arbre graphique des tableaux (sans toucher au moteur) */
 (function(){
-  window.CSM_BUILD = 'v20.39-arbre-graphique-tableaux';
+  window.CSM_BUILD = 'v20.40-prevision-horaires-tableaux';
   window.BUILD_V20 = window.CSM_BUILD;
 
   function esc(v){
@@ -7509,8 +7509,93 @@ function renderBrackets() {
     if (typeof teamDisplay === 'function') return teamDisplay(name || 'À définir');
     return esc(name || 'À définir');
   }
+  function averageMatchMinutes2040(){
+    try {
+      const done = (matches || []).filter(m => isDone(m) && m.started_at && m.completed_at);
+      const vals = done.map(m => (new Date(m.completed_at).getTime() - new Date(m.started_at).getTime()) / 60000)
+        .filter(v => Number.isFinite(v) && v >= 5 && v <= 60);
+      if (vals.length) return Math.max(8, Math.round(vals.reduce((a,b)=>a+b,0) / vals.length));
+    } catch(e) {}
+    const dur = Number(settings && settings.match_duration ? settings.match_duration : 12);
+    const pause = Number(settings && settings.break_duration ? settings.break_duration : 3);
+    return Math.max(10, dur + pause);
+  }
+  function minutesFromTime2040(v){
+    const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  }
+  function timeFromMinutes2040(total){
+    total = Math.max(0, Math.round(Number(total) || 0));
+    const day = 24 * 60;
+    total = ((total % day) + day) % day;
+    return String(Math.floor(total / 60)).padStart(2,'0') + ':' + String(total % 60).padStart(2,'0');
+  }
+  function bracketEstimatedTime2040(match){
+    if (!match) return '';
+    const direct = (typeof computedScheduledTime === 'function' && computedScheduledTime(match)) || match.scheduled_time || '';
+    if (direct) return direct;
+    if (isLive(match)) return 'En cours';
+    if (isDone(match)) return 'Terminé';
+
+    const all = (matches || [])
+      .filter(x => x && (x.bracket || x.phase === 'Tableau principal' || x.phase === 'Consolante'))
+      .slice();
+    if (!all.length) return '';
+
+    const courtsCount = Math.max(1, Number(settings && settings.courts_count ? settings.courts_count : 6));
+    const step = averageMatchMinutes2040();
+    const now = new Date();
+    let base = now.getHours() * 60 + now.getMinutes();
+
+    // Si des matchs de tableau sont déjà démarrés/terminés, on repart de la dernière activité connue.
+    const realTimes = all.map(x => x.completed_at || x.started_at).filter(Boolean)
+      .map(x => { const d = new Date(x); return Number.isNaN(d.getTime()) ? null : d.getHours() * 60 + d.getMinutes(); })
+      .filter(v => v !== null);
+    if (realTimes.length) base = Math.max(base, Math.max(...realTimes));
+
+    // Sinon, si B2 a des horaires théoriques, la prévision tableaux commence après le dernier B2.
+    const b2 = (matches || []).filter(x => x && x.phase === 'Brassage 2');
+    if (b2.length) {
+      const b2Times = b2.map(x => (typeof computedScheduledTime === 'function' && computedScheduledTime(x)) || x.scheduled_time || '')
+        .map(minutesFromTime2040).filter(v => v !== null);
+      if (b2Times.length) base = Math.max(base, Math.max(...b2Times) + step);
+    }
+
+    const rank = (m) => {
+      try { return (typeof bracketRank === 'function' ? bracketRank(m) : bracketNameRank_v2026(m)); }
+      catch(e) { return String(m.bracket || m.phase || '').toLowerCase().includes('consolante') ? 1 : 0; }
+    };
+    const rkey = (m) => {
+      try { return roundKey(m); } catch(e) { return String(m.round || 'Tour'); }
+    };
+    const orderFor = (b) => {
+      try { return roundOrderForBracket(b === 0 ? 'Principal' : 'Consolante'); }
+      catch(e) { return b === 0 ? ['1/8 finale','Quart','Demi','3e place','Finale'] : ['Barrage','Quart','Demi','3e place','Finale']; }
+    };
+
+    let cursor = base;
+    const byBracket = [0, 1];
+    for (const b of byBracket) {
+      const listB = all.filter(x => rank(x) === b);
+      if (!listB.length) continue;
+      const rounds = orderFor(b);
+      for (const r of rounds) {
+        const listR = listB.filter(x => rkey(x) === r).sort((a,b)=>Number(a.match_order||0)-Number(b.match_order||0)||Number(a.id||0)-Number(b.id||0));
+        if (!listR.length) continue;
+        const idx = listR.findIndex(x => String(x.id) === String(match.id));
+        if (idx >= 0) return timeFromMinutes2040(cursor + Math.floor(idx / courtsCount) * step);
+        cursor += Math.ceil(listR.length / courtsCount) * step;
+      }
+      // Principal et consolante peuvent tourner en parallèle au début, mais on garde une prévision prudente par bloc.
+      if (b === 0) cursor = base;
+    }
+    return '';
+  }
   function sched(m){
-    return (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || m.scheduled_time || 'Horaire à définir';
+    const direct = (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || m.scheduled_time || '';
+    if (direct) return direct;
+    const forecast = bracketEstimatedTime2040(m);
+    return forecast ? ('Prévision ' + forecast) : 'Horaire à définir';
   }
   function isDone(m){
     if (!m) return false;
