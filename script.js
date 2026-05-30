@@ -6659,3 +6659,92 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.30 - B2 serpentin corrigé 25/26 + libération terrain après fin match
+   - B2 : chapeaux 1..N / N+1..2N / 2N+1..3N / faibles en reverse + surplus sur premières poules.
+   - Exemple 25 équipes : A=1,12,13,24,25 ; B=2,11,14,23 ; ...
+   - Après validation d'un match, on ne propose plus automatiquement un autre terrain : le terrain libéré redevient disponible dans la liste.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.30-b2-serpentin-terrain-free';
+
+  window.serpentinePoolsFromRanking = serpentinePoolsFromRanking = function(ranking, sizes){
+    const seeds = (ranking || []).map(function(r){ return (r && r.name) ? r.name : r; }).filter(Boolean);
+    const n = (sizes || []).length || 6;
+    const poolSizes = (sizes && sizes.length ? sizes : Array(n).fill(4)).map(Number);
+    const pools = poolSizes.map(function(){ return []; });
+    const canPush = function(pi){ return pools[pi] && pools[pi].length < poolSizes[pi]; };
+    const push = function(pi, seed){ if (seed && canPush(pi)) pools[pi].push(seed); };
+
+    // Chapeau 1 : forts, dans l'ordre 1 -> n.
+    for (let i = 0; i < n; i++) push(i, seeds[i]);
+
+    // Chapeau 2 : moyens+, en reverse n+1 -> 2n.
+    for (let i = 0; i < n; i++) push(i, seeds[(2 * n - 1) - i]);
+
+    // Chapeau 3 : moyens-, dans l'ordre 2n+1 -> 3n.
+    for (let i = 0; i < n; i++) push(i, seeds[(2 * n) + i]);
+
+    // Chapeau 4 : faibles. On met d'abord une équipe par poule en reverse,
+    // puis les équipes en surplus sur les premières poules capables d'accueillir 5 équipes.
+    const weak = seeds.slice(3 * n);
+    const base = Math.min(n, weak.length);
+    for (let i = 0; i < base; i++) push(i, weak[(base - 1) - i]);
+    for (let j = base; j < weak.length; j++) {
+      const target = pools.findIndex(function(_, pi){ return canPush(pi); });
+      if (target >= 0) push(target, weak[j]);
+    }
+    return pools;
+  };
+
+  window.generateBrassage2 = generateBrassage2 = async function(){
+    if (!adminUnlocked) return;
+    const adminMsg = document.getElementById('adminMsg');
+    try {
+      const teamCount = (typeof getTournamentTeamCount === 'function') ? getTournamentTeamCount() : ((teams || []).length || 24);
+      const courtCount = Number(settings && settings.courts_count) || 6;
+      const sizes = (typeof poolSizesForCount === 'function') ? poolSizesForCount(teamCount, courtCount) : Array(courtCount).fill(4);
+      const expected = (typeof expectedRoundRobinMatchesForSizes === 'function')
+        ? expectedRoundRobinMatchesForSizes(sizes)
+        : sizes.reduce((sum, s) => sum + (s * (s - 1)) / 2, 0);
+      const b1Matches = (matches || []).filter(m => m.phase === 'Brassage 1');
+      if (b1Matches.length !== expected) {
+        if (adminMsg) adminMsg.innerText = `Impossible : il faut ${expected} matchs en Brassage 1, trouvés ${b1Matches.length}.`;
+        return;
+      }
+      const unfinished = b1Matches.filter(m => !(m && m.status === 'done' && m.score_a !== null && m.score_b !== null));
+      if (unfinished.length) {
+        if (adminMsg) adminMsg.innerText = `Impossible : ${unfinished.length} match(s) de Brassage 1 ne sont pas terminés.`;
+        return;
+      }
+      if (!confirm('Générer le Brassage 2 en serpentin ?\n\nLes matchs Brassage 2 existants seront supprimés puis recréés.')) return;
+
+      const ranking = (typeof phaseGlobalRanking === 'function') ? phaseGlobalRanking('Brassage 1') : [];
+      const pools = serpentinePoolsFromRanking(ranking, sizes);
+      const startB2 = (typeof getBrassage2StartTime === 'function') ? getBrassage2StartTime() : (settings && settings.start_time) || '09:30';
+      const poolNames = 'GHIJKLMNOPQRSTUVWXYZ'.split('');
+      let rows = [];
+      pools.forEach(function(poolTeams, idx){
+        rows.push(...generateRoundRobinRows('Brassage 2', poolNames[idx] || String(idx + 1), idx + 1, poolTeams, startB2));
+      });
+      if (typeof assignBalancedRefsInPools === 'function' && typeof previousRefCounts === 'function') rows = assignBalancedRefsInPools(rows, previousRefCounts('Brassage 1'));
+      if (typeof withAccessCodes === 'function') rows = withAccessCodes(rows, ((matches || []).filter(m => m.phase === 'Brassage 1').length || 0) + 1);
+
+      if (adminMsg) adminMsg.innerText = 'Nettoyage ancien Brassage 2...';
+      const del = await client.from('matches').delete().eq('phase', 'Brassage 2');
+      if (del.error) throw new Error('suppression ancien Brassage 2 : ' + del.error.message);
+      const ins = await client.from('matches').insert(rows);
+      if (ins.error) throw new Error('création Brassage 2 : ' + ins.error.message);
+      if (adminMsg) adminMsg.innerText = `Brassage 2 généré ✅ Serpentin corrigé, ${rows.length} matchs créés.`;
+      await loadData();
+    } catch(e) {
+      if (adminMsg) adminMsg.innerText = 'Impossible de générer Brassage 2 : ' + e.message;
+      alert('Impossible de générer Brassage 2 : ' + e.message);
+    }
+  };
+
+  // Ne plus auto-proposer/lancer un autre match après validation : cela libère le terrain dans la liste.
+  window.proposeNextMatchAfterFinish = proposeNextMatchAfterFinish = function(){ return; };
+
+  console.log(window.CSM_BUILD);
+})();
