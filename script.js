@@ -6811,3 +6811,71 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.32 - Fix disponibilité terrain après fin de match
+   Problème: après plusieurs matchs terminés sur un terrain, la liste de saisie pouvait ne plus proposer le prochain match du même terrain.
+   Règle: un terrain est occupé uniquement par un match réellement LIVE. Les matchs DONE/COMPLETED libèrent le terrain.
+   La liste propose toujours le prochain match jouable de chaque terrain disponible.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.32-terrain-dispo-apres-fin';
+
+  function statusV2032(m){
+    return String((m && m.status) || '').toLowerCase().trim();
+  }
+  function isDoneV2032(m){
+    const s = statusV2032(m);
+    return ['done','completed','finished','closed','termine','terminé'].includes(s);
+  }
+  function isLiveV2032(m){
+    const s = statusV2032(m);
+    return ['live','active','in_progress','started','ongoing','running','en_cours','en cours','in progress','launched','lance','lancé','saisie'].includes(s) || s.includes('cours') || s.includes('progress');
+  }
+  function isArchivedV2032(m){
+    const p = String((m && m.phase) || '').toLowerCase();
+    return p === 'archive' || p === '__archive__' || statusV2032(m).includes('archive');
+  }
+  function isDefinedTeamV2032(name){
+    const v = String(name || '').trim();
+    return v && v !== 'À définir' && v !== 'A définir';
+  }
+
+  window.isPlayableMatch = isPlayableMatch = function(m){
+    return !!(m && isDefinedTeamV2032(m.team_a) && isDefinedTeamV2032(m.team_b) && !isArchivedV2032(m) && !isDoneV2032(m) && !isLiveV2032(m));
+  };
+
+  function playSortV2032(a,b){
+    const pa = (typeof phasePlayOrderValue === 'function') ? phasePlayOrderValue(a) : 0;
+    const pb = (typeof phasePlayOrderValue === 'function') ? phasePlayOrderValue(b) : 0;
+    return pa - pb ||
+      String((typeof computedScheduledTime === 'function' ? computedScheduledTime(a) : a.scheduled_time) || '').localeCompare(String((typeof computedScheduledTime === 'function' ? computedScheduledTime(b) : b.scheduled_time) || '')) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      Number(a.id || 0) - Number(b.id || 0);
+  }
+
+  window.nextPlayableMatches = nextPlayableMatches = function(limit){
+    limit = limit || 6;
+    const courtsCount = Number(settings && settings.courts_count ? settings.courts_count : 6) || 6;
+    const playable = (matches || []).filter(isPlayableMatch).sort(playSortV2032);
+    const liveByCourt = new Set((matches || [])
+      .filter(function(m){ return m && m.court && isLiveV2032(m); })
+      .map(function(m){ return Number(m.court); })
+    );
+
+    const selected = [];
+    for (let c = 1; c <= courtsCount && selected.length < limit; c++) {
+      if (liveByCourt.has(c)) continue;
+      const m = playable.find(function(x){ return Number(x.court) === c && !selected.some(function(y){ return String(y.id) === String(x.id); }); });
+      if (m) selected.push(m);
+    }
+
+    // Si moins de cartes que de terrains, on complète avec les autres matchs jouables.
+    playable.forEach(function(m){
+      if (selected.length >= limit) return;
+      if (!selected.some(function(x){ return String(x.id) === String(m.id); })) selected.push(m);
+    });
+    return selected.slice(0, limit);
+  };
+
+  console.log(window.CSM_BUILD);
+})();
