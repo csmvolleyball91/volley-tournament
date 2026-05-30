@@ -1858,8 +1858,8 @@ function globalRanking() {
     b2Score: (b2[t.name] && b2[t.name].score != null ? b2[t.name].score : 0),
     b1Score: (b1[t.name] && b1[t.name].score != null ? b1[t.name].score : 0)
   })).sort((a,b) =>
-    b.b2
-    b.b1
+    b.b2Score - a.b2Score ||
+    b.b1Score - a.b1Score ||
     teamNumberFromName(a.name) - teamNumberFromName(b.name) ||
     String(a.name).localeCompare(String(b.name))
   );
@@ -2359,7 +2359,7 @@ async function adminForfeitPromptFlow() {
   const winnerRaw = prompt(`Vainqueur ?\n1. ${m.team_a}\n2. ${m.team_b}`);
   if (winnerRaw === null) return;
   const winnerSide = String(winnerRaw).trim() === '2' ? 'b' : 'a';
-  const scoreRaw = prompt('
+  const scoreRaw = prompt('Score à appliquer ?\nExemple : 15-0', '15-0');
   if (scoreRaw === null) return;
   const mm = String(scoreRaw).trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
   if (!mm) {
@@ -2445,7 +2445,7 @@ async function adminResetPromptFlow() {
   if (activeScoreMatchId === m.id) activeScoreMatchId = null;
   delete matchEditCodes[m.id];
   const msg = document.getElementById('adminMsg');
-  if (msg) msg.innerText = 'Match réinitialisé ✅ 
+  if (msg) msg.innerText = 'Match réinitialisé ✅ Score 0-0, statut à lancer.';
   await loadData();
 }
 
@@ -2545,7 +2545,7 @@ function validateFinalScore(m) {
   const a = Number(m.score_a == null ? 0 : m.score_a);
   const b = Number(m.score_b == null ? 0 : m.score_b);
   if (a === 0 && b === 0) {
-    return '
+    return 'Score invalide : le match est à 0-0. Saisis au moins un point avant de terminer.';
   }
   if (a === b) {
     return 'Score invalide : un match doit avoir un vainqueur, avec au moins 1 point d’écart.';
@@ -3168,7 +3168,7 @@ resetScores = async function() {
   try { localStorage.removeItem(activeMatchStorageKey()); } catch(e) {}
   activeScoreMatchId = null;
 
-  document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ 
+  document.getElementById('adminMsg').innerText = 'Reset complet effectué ✅ Scores 0-0, statuts à jouer, chronos/reprises purgés.';
   await loadData();
 };
 
@@ -6016,7 +6016,7 @@ console.log(window.CSM_BUILD);
   function fmtPct(v){ return Math.round((Number(v)||0) * 100); }
   function fmtRatSort(v){ return Math.round((Number(v)||0) * 100); }
   function fmtRatio(v){ const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; }
-  function fmt
+  function fmtScore(wp, ratio, mj){ return Number(mj||0) ? `${fmtPct(wp)}% · R${fmtRatio(ratio)}` : '-'; }
 
   window.globalRanking = globalRanking = function(){
     const b2 = aggregatePhaseStats('Brassage 2');
@@ -6135,7 +6135,7 @@ function renderBrackets() {
     <div class="global-top-card rank-${i+1}">
       <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
       <strong>${typeof teamDisplay === 'function' ? teamDisplay(r.name) : (r.name || '')}</strong>
-      <small>B2 ${r.b2</small>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
     </div>
   `).join('');
   rankDiv.innerHTML = `<section class="global-ranking-card">
@@ -6143,7 +6143,7 @@ function renderBrackets() {
     <div class="global-top3">${topSeeds}</div>
     <div class="table-scroll"><table class="ranking-table global-ranking-table">
       <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
-      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${typeof teamDisplay === 'function' ? teamDisplay(r.name) : (r.name || '')}</b></td><td>${r.b1</td><td class="score-cell">${r.b2</td></tr>`).join('')}
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${typeof teamDisplay === 'function' ? teamDisplay(r.name) : (r.name || '')}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
     </table></div>
   </section>`;
 
@@ -6253,7 +6253,7 @@ function renderBrackets() {
     <div class="global-top-card rank-${i+1}">
       <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
       <strong>${td(r.name)}</strong>
-      <small>B2 ${r.b2</small>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
     </div>
   `).join('');
 
@@ -6262,7 +6262,7 @@ function renderBrackets() {
     <div class="global-top3">${topSeeds}</div>
     <div class="table-scroll"><table class="ranking-table global-ranking-table">
       <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
-      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1</td><td class="score-cell">${r.b2</td></tr>`).join('')}
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
     </table></div>
   </section>`;
 
@@ -6410,7 +6410,7 @@ function renderBrackets() {
     <div class="global-top-card rank-${i+1}">
       <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
       <strong>${td(r.name)}</strong>
-      <small>B2 ${r.b2</small>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
     </div>
   `).join('');
 
@@ -6419,7 +6419,7 @@ function renderBrackets() {
     <div class="global-top3">${topSeeds}</div>
     <div class="table-scroll"><table class="ranking-table global-ranking-table">
       <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
-      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1</td><td class="score-cell">${r.b2</td></tr>`).join('')}
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
     </table></div>
   </section>`;
 
@@ -7592,10 +7592,25 @@ function renderBrackets() {
     return '';
   }
   function sched(m){
+    if (isDone(m)) {
+      return m.completed_at ? ('Terminé à ' + formatTime(m.completed_at)) : 'Terminé';
+    }
+    if (isLive(m)) {
+      return 'En cours';
+    }
     const direct = (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || m.scheduled_time || '';
     if (direct) return direct;
     const forecast = bracketEstimatedTime2040(m);
-    return forecast ? ('Prévision ' + forecast) : 'Horaire à définir';
+    if (!forecast) return 'Horaire à définir';
+    try {
+      const p = forecast.split(':');
+      const target = new Date();
+      target.setHours(Number(p[0]||0), Number(p[1]||0),0,0);
+      const mins = Math.round((target.getTime()-Date.now())/60000);
+      return mins > 0 ? ('Prévision ' + forecast + ' · ≈ dans ' + mins + ' min') : ('Prévision ' + forecast);
+    } catch(e) {
+      return 'Prévision ' + forecast;
+    }
   }
   function isDone(m){
     if (!m) return false;
