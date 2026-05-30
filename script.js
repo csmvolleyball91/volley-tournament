@@ -7670,7 +7670,6 @@ function renderBrackets() {
       <div class="btm-top"><span>Match ${esc(m.match_order || '-')}</span><span>T${esc(m.court || '-')} · ${esc(sched(m))}</span></div>
       <div class="btm-team ${m.winner && m.winner === m.team_a ? 'winner' : ''}"><span>${td(m.team_a)}</span><b>${m.score_a != null ? esc(m.score_a) : ''}</b></div>
       <div class="btm-team ${m.winner && m.winner === m.team_b ? 'winner' : ''}"><span>${td(m.team_b)}</span><b>${m.score_b != null ? esc(m.score_b) : ''}</b></div>
-      <div class="btm-bottom"><span class="btm-status">${statusLabel(m)}</span></div>
     </div>`;
   }
   function renderBracketTree(title, list){
@@ -7745,13 +7744,13 @@ function renderBrackets() {
     .bracket-tree-round-title{position:sticky;top:0;z-index:2;background:#ffd21a;color:#002b63;border:1px solid #f4b400;border-radius:999px;padding:8px 12px;text-align:center;font-size:14px;font-weight:950;text-transform:uppercase;letter-spacing:.03em;}
     .bracket-tree-round-list{display:flex;flex-direction:column;gap:14px;height:100%;justify-content:space-around;min-height:180px;}
     .bracket-tree-round-list.count-1{justify-content:center}.bracket-tree-round-list.count-2{justify-content:space-evenly}.bracket-tree-round-list.count-3,.bracket-tree-round-list.count-4{justify-content:space-around}
-    .bracket-tree-match{position:relative;border-radius:16px;border:2px solid rgba(11,59,130,.14);background:#fff;padding:10px;box-shadow:0 8px 18px rgba(11,59,130,.08);min-height:116px;}
+    .bracket-tree-match{position:relative;border-radius:16px;border:2px solid rgba(11,59,130,.14);background:#fff;padding:10px;box-shadow:0 8px 18px rgba(11,59,130,.08);min-height:92px;}
     .bracket-tree-round:not(:last-child) .bracket-tree-match::after{content:'';position:absolute;right:-34px;top:50%;width:34px;height:2px;background:#ffd21a;opacity:.75;}
     .bracket-tree-match.done{border-color:#22c55e;background:linear-gradient(180deg,#f0fdf4,#fff);}
     .bracket-tree-match.live{border-color:#f97316;background:linear-gradient(180deg,#fff7ed,#fff);}
     .bracket-tree-match.pending{border-color:#bdd7ff;background:linear-gradient(180deg,#f8fbff,#fff);}
-    .btm-top,.btm-bottom{display:flex;justify-content:space-between;gap:8px;color:#64748b;font-size:11px;font-weight:900;}
-    .btm-top{margin-bottom:8px}.btm-bottom{margin-top:8px;align-items:center;}
+    .btm-top{display:flex;justify-content:space-between;gap:8px;color:#64748b;font-size:11px;font-weight:900;}
+    .btm-top{margin-bottom:8px}
     .btm-team{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:7px 8px;border-radius:10px;font-size:13px;font-weight:950;color:#001f4e;line-height:1.15;}
     .btm-team + .btm-team{border-top:1px solid rgba(11,59,130,.10);}
     .btm-team.winner{background:#fff4bf;outline:1px solid rgba(245,183,0,.35);}
