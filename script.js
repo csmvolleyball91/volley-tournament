@@ -7762,3 +7762,149 @@ function renderBrackets() {
   document.head.appendChild(css);
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.44 - Export Excel admin (.xls HTML) */
+(function(){
+  window.CSM_BUILD = 'v20.44-export-excel';
+
+  function excelEscapeV2044(v){
+    return String(v == null ? '' : v)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+  function statusLowerV2044(m){ return String((m && m.status) || '').toLowerCase().trim(); }
+  function isDoneV2044(m){ return ['done','completed','finished','closed','termine','terminé'].includes(statusLowerV2044(m)); }
+  function isRealTeamV2044(t){
+    const s = String(t || '').trim();
+    return !!s && s !== 'À définir' && s !== 'A définir' && s !== '-' && s.toLowerCase() !== 'bye';
+  }
+  function teamLevelV2044(name){
+    const t = (teams || []).find(x => String(x.name || '') === String(name || ''));
+    return t ? (t.level || '') : '';
+  }
+  function fmtPctV2044(v){ return Math.round((Number(v) || 0) * 100) + '%'; }
+  function fmtRatioV2044(v){ return Number.isFinite(Number(v)) ? Number(v).toFixed(2) : '-'; }
+  function tableV2044(title, headers, rows){
+    let html = '<h2>' + excelEscapeV2044(title) + '</h2><table border="1"><thead><tr>';
+    headers.forEach(h => html += '<th>' + excelEscapeV2044(h) + '</th>');
+    html += '</tr></thead><tbody>';
+    rows.forEach(r => {
+      html += '<tr>';
+      r.forEach(c => html += '<td>' + excelEscapeV2044(c) + '</td>');
+      html += '</tr>';
+    });
+    html += '</tbody></table><br/>';
+    return html;
+  }
+  function phaseStatsV2044(phase){
+    const map = {};
+    (matches || []).filter(m => m.phase === phase && isDoneV2044(m)).forEach(m => {
+      const a = String(m.team_a || '');
+      const b = String(m.team_b || '');
+      if (!isRealTeamV2044(a) || !isRealTeamV2044(b)) return;
+      const sa = Number(m.score_a || 0);
+      const sb = Number(m.score_b || 0);
+      [a,b].forEach(n => { if (!map[n]) map[n] = {team:n, level:teamLevelV2044(n), mj:0, v:0, d:0, pm:0, pe:0}; });
+      map[a].mj++; map[b].mj++;
+      map[a].pm += sa; map[a].pe += sb;
+      map[b].pm += sb; map[b].pe += sa;
+      const win = m.winner || (sa > sb ? a : (sb > sa ? b : ''));
+      if (win === a) { map[a].v++; map[b].d++; }
+      else if (win === b) { map[b].v++; map[a].d++; }
+    });
+    return Object.values(map).map(x => {
+      x.winPct = x.mj ? x.v / x.mj : 0;
+      x.ratio = x.pe > 0 ? x.pm / x.pe : (x.pm > 0 ? 999 : 0);
+      return x;
+    }).sort((a,b) =>
+      (b.winPct - a.winPct) ||
+      (b.ratio - a.ratio) ||
+      (b.pm - a.pm) ||
+      String(a.team).localeCompare(String(b.team))
+    );
+  }
+
+  window.exportTournamentExcel = function(){
+    try {
+      const now = new Date();
+      const stamp = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0');
+      let html = '<html><head><meta charset="utf-8"><style>' +
+        'body{font-family:Arial,sans-serif} table{border-collapse:collapse;margin-bottom:18px} th{background:#003b7a;color:white;font-weight:bold} td,th{padding:6px 9px;border:1px solid #999;mso-number-format:\\@} h1{color:#003b7a} h2{color:#003b7a;margin-top:24px}' +
+        '</style></head><body>';
+      html += '<h1>Export tournoi CSM Volley</h1><p>Exporté le ' + excelEscapeV2044(now.toLocaleString('fr-FR')) + '</p>';
+
+      html += tableV2044('Configuration', ['Paramètre','Valeur'], [
+        ['Build', window.CSM_BUILD || ''],
+        ['Début tournoi', settings && settings.start_time],
+        ['Durée match brassage', settings && settings.match_duration],
+        ['Pause entre matchs', settings && settings.break_duration],
+        ['Pause B1/B2', settings && settings.break_between_rounds],
+        ['Nombre de terrains', settings && settings.courts_count],
+        ["Nombre d'équipes", (typeof getTournamentTeamCount === 'function' ? getTournamentTeamCount() : ((teams || []).length))]
+      ]);
+
+      html += tableV2044('Équipes', ['ID','Nom','Niveau','Poule B1','Code arbitre'],
+        (teams || []).slice().sort((a,b)=>Number(a.id||0)-Number(b.id||0)).map(t => [t.id, t.name, t.level, t.initial_pool, t.ref_code || t.access_code || ''])
+      );
+
+      html += tableV2044('Matchs', ['ID','Phase','Poule','Tableau','Tour','Ordre','Terrain','Horaire','Équipe A','Score A','Score B','Équipe B','Gagnant','Statut','Arbitre','Début','Fin'],
+        (matches || []).slice().sort((a,b)=>Number(a.id||0)-Number(b.id||0)).map(m => [
+          m.id, m.phase, m.pool, m.bracket, m.round, m.match_order, m.court, m.scheduled_time,
+          m.team_a, m.score_a, m.score_b, m.team_b, m.winner, m.status, m.referee_team, m.started_at, m.completed_at
+        ])
+      );
+
+      ['Brassage 1','Brassage 2'].forEach(phase => {
+        const stats = phaseStatsV2044(phase);
+        html += tableV2044('Classement ' + phase, ['Rang','Équipe','Niveau','% Victoires','Ratio','MJ','V','D','Points marqués','Points encaissés'],
+          stats.map((s,i) => [i+1, s.team, s.level, fmtPctV2044(s.winPct), fmtRatioV2044(s.ratio), s.mj, s.v, s.d, s.pm, s.pe])
+        );
+      });
+
+      html += '</body></html>';
+      const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'export_tournoi_csm_' + stamp + '.xls';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    } catch (e) {
+      alert('Export Excel impossible : ' + (e && e.message ? e.message : e));
+    }
+  };
+
+  window.ensureExcelExportButton = function(){
+    const panel = document.getElementById('adminPanel');
+    if (!panel || document.getElementById('excelExportCard')) return;
+    const after = document.getElementById('backupExportCard') || panel.querySelector('.admin-hero-card');
+    const card = document.createElement('div');
+    card.id = 'excelExportCard';
+    card.className = 'admin-hero-card excel-export-card';
+    card.innerHTML = '<div><p class="eyebrow dark">Export</p><h3>Export Excel</h3><p class="small">Télécharge un fichier Excel avec équipes, matchs, configuration et classements B1/B2.</p></div>' +
+      '<button class="admin-big-action" type="button" onclick="exportTournamentExcel()">Exporter Excel</button>';
+    if (after && after.parentNode) after.parentNode.insertBefore(card, after.nextSibling);
+    else panel.insertBefore(card, panel.firstChild);
+  };
+
+  const prevRenderAllV2044 = window.renderAll || renderAll;
+  window.renderAll = renderAll = function(){
+    prevRenderAllV2044();
+    try { ensureExcelExportButton(); } catch(e) { console.warn('excel export button', e); }
+  };
+  const prevRenderAdminV2044 = window.renderAdmin || renderAdmin;
+  window.renderAdmin = renderAdmin = function(){
+    if (prevRenderAdminV2044) prevRenderAdminV2044();
+    try { ensureExcelExportButton(); } catch(e) { console.warn('excel export button admin', e); }
+  };
+
+  const css = document.createElement('style');
+  css.textContent = '.excel-export-card{border-left:6px solid #22c55e}.excel-export-card .admin-big-action{background:#0b5bbb}';
+  document.head.appendChild(css);
+
+  console.log(window.CSM_BUILD);
+})();
