@@ -6308,3 +6308,172 @@ function renderBrackets() {
     </div>`).join('')}
   `).join('');
 }
+
+/* v20.28 - Consolante: petite finale + affichage explicite du BYE 17e pour 23 équipes */
+window.CSM_BUILD = 'v20.28-consolante-petite-finale-bye-visible';
+
+function bracketRowsFromRanking(ranking) {
+  const rows=[]; const courtsCount=Math.max(1, Number(settings?.courts_count || 6));
+  const courtFor = order => ((Number(order || 1)-1)%courtsCount)+1;
+  const safeRow = row => Object.assign({ court:courtFor(row.match_order || rows.length+1), scheduled_time:null, status:'pending', referee_team:null, access_code:null, score_a:null, score_b:null, winner:null }, row);
+  const safeSeed = (idx) => ranking[idx-1] && ranking[idx-1].name ? ranking[idx-1].name : 'À définir';
+
+  // Tableau principal : 16 équipes, avec petite finale (3e place)
+  const mainPairs = [[1,16],[8,9],[5,12],[4,13],[3,14],[6,11],[7,10],[2,15]];
+  mainPairs.forEach((p,idx)=>rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'1/8 finale', match_order:idx+1, team_a:safeSeed(p[0]), team_b:safeSeed(p[1]), next_match_order:9+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+  for(let i=0;i<4;i++) rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Quart', match_order:9+i, team_a:'À définir', team_b:'À définir', next_match_order:13+Math.floor(i/2), next_slot:i%2===0?'A':'B' }));
+  for(let i=0;i<2;i++) rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Demi', match_order:13+i, team_a:'À définir', team_b:'À définir', next_match_order:15, next_slot:i===0?'A':'B', loser_next_match_order:16, loser_next_slot:i===0?'A':'B' }));
+  rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'3e place', match_order:16, team_a:'À définir', team_b:'À définir' }));
+  rows.push(safeRow({ phase:'Tableau principal', bracket:'Principal', round:'Finale', match_order:15, team_a:'À définir', team_b:'À définir' }));
+
+  // Consolante : toutes les équipes après les 16 qualifiées principal
+  const cons = ranking.slice(16).map(r=>r.name);
+  const seed = i => cons[i-1] || 'À définir';
+  const addConsDemi = (order, a, b, nextSlot, loserSlot) => rows.push(safeRow({
+    phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:order,
+    team_a:a, team_b:b, next_match_order:107, next_slot:nextSlot,
+    loser_next_match_order:108, loser_next_slot:loserSlot
+  }));
+
+  if (cons.length >= 9) {
+    const extra = cons.length - 8; // ex : 9 équipes => 1 barrage 8e vs 9e
+    for(let e=0;e<extra;e++){
+      const high = 8-extra+1+e; const low = cons.length-e;
+      rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Barrage', match_order:100+e, team_a:seed(high), team_b:seed(low), next_match_order:101+e, next_slot: high===8?'B':'A' }));
+    }
+    const qPairs = [[1,8],[4,5],[3,6],[2,7]];
+    qPairs.forEach((p,idx)=>rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101+idx, team_a: p[0] <= 8-extra ? seed(p[0]) : 'À définir', team_b: p[1] <= 8-extra ? seed(p[1]) : 'À définir', next_match_order:105+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+    addConsDemi(105, 'À définir', 'À définir', 'A', 'A');
+    addConsDemi(106, 'À définir', 'À définir', 'B', 'B');
+  } else if (cons.length === 8) {
+    [[1,8],[4,5],[3,6],[2,7]].forEach((p,idx)=>rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101+idx, team_a:seed(p[0]), team_b:seed(p[1]), next_match_order:105+Math.floor(idx/2), next_slot:idx%2===0?'A':'B' })));
+    addConsDemi(105, 'À définir', 'À définir', 'A', 'A');
+    addConsDemi(106, 'À définir', 'À définir', 'B', 'B');
+  } else if (cons.length === 7) {
+    // 23 équipes => 7 en consolante. Le 17e (1er consolante) est exempt et va directement en demi.
+    // Q1 : 4 vs 5 -> Demi 105 slot B ; Q2 : 3 vs 6 -> Demi 106 slot A ; Q3 : 2 vs 7 -> Demi 106 slot B
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'A' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:103, team_a:seed(2), team_b:seed(7), next_match_order:106, next_slot:'B' }));
+    addConsDemi(105, seed(1), 'À définir', 'A', 'A');
+    addConsDemi(106, 'À définir', 'À définir', 'B', 'B');
+  } else if (cons.length === 6) {
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:101, team_a:seed(4), team_b:seed(5), next_match_order:105, next_slot:'B' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Quart', match_order:102, team_a:seed(3), team_b:seed(6), next_match_order:106, next_slot:'B' }));
+    addConsDemi(105, seed(1), 'À définir', 'A', 'A');
+    addConsDemi(106, seed(2), 'À définir', 'B', 'B');
+  } else if (cons.length >= 4) {
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:105, team_a:seed(1), team_b:seed(4), next_match_order:107, next_slot:'A', loser_next_match_order:108, loser_next_slot:'A' }));
+    rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Demi', match_order:106, team_a:seed(2), team_b:seed(3), next_match_order:107, next_slot:'B', loser_next_match_order:108, loser_next_slot:'B' }));
+  }
+
+  if (cons.length >= 2) rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'Finale', match_order:107, team_a:'À définir', team_b:'À définir' }));
+  if (cons.length >= 4) rows.push(safeRow({ phase:'Consolante', bracket:'Consolante', round:'3e place', match_order:108, team_a:'À définir', team_b:'À définir' }));
+  return rows;
+}
+
+function roundRank_v2028(m) {
+  const r = normalizeText_v2026((m && m.round) || '');
+  const bRank = bracketNameRank_v2026(m);
+  if (bRank === 0) {
+    if (r.includes('1/8') || r.includes('huit')) return 0;
+    if (r.includes('quart')) return 1;
+    if (r.includes('demi')) return 2;
+    if (r.includes('3e') || r.includes('3eme') || r.includes('troisieme') || r.includes('petite')) return 3;
+    if (r.includes('final')) return 4;
+    return 50;
+  }
+  if (bRank === 1) {
+    if (r.includes('barrage') || r.includes('prelim')) return 0;
+    if (r.includes('quart')) return 1;
+    if (r.includes('exempt') || r.includes('bye')) return 1.5;
+    if (r.includes('demi')) return 2;
+    if (r.includes('3e') || r.includes('3eme') || r.includes('troisieme') || r.includes('petite')) return 3;
+    if (r.includes('final')) return 4;
+    return 50;
+  }
+  return 50;
+}
+
+function renderBrackets() {
+  const rankDiv = document.getElementById('globalRankingView');
+  const bracketDiv = document.getElementById('bracketsView');
+  if (!rankDiv || !bracketDiv) return;
+
+  const ranking = (typeof globalRanking === 'function') ? globalRanking() : [];
+  const td = (name) => (typeof teamDisplay === 'function') ? teamDisplay(name || 'À définir') : String(name || 'À définir');
+  const esc = (v) => (typeof escapeHtml === 'function') ? escapeHtml(v) : String(v || '');
+  const st = (m) => (typeof statusText === 'function') ? statusText(m) : String((m && m.status) || '');
+  const sched = (m) => (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || 'Horaire à définir';
+
+  const topSeeds = ranking.slice(0,3).map((r,i) => `
+    <div class="global-top-card rank-${i+1}">
+      <span class="ranking-medal">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+      <strong>${td(r.name)}</strong>
+      <small>B2 ${r.b2Score || '-'} · B1 ${r.b1Score || '-'}</small>
+    </div>
+  `).join('');
+
+  rankDiv.innerHTML = `<section class="global-ranking-card">
+    <div class="ranking-phase-title"><span>Classement tableaux</span><small>Tri : B2 prioritaire, puis B1 en cas d'égalité</small></div>
+    <div class="global-top3">${topSeeds}</div>
+    <div class="table-scroll"><table class="ranking-table global-ranking-table">
+      <tr><th>Rang</th><th>Équipe</th><th>B1</th><th>B2</th></tr>
+      ${ranking.map((r,i) => `<tr class="rank-row ${i < 3 ? 'rank-highlight' : ''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${td(r.name)}</b></td><td>${r.b1Score || '-'}</td><td class="score-cell">${r.b2Score || '-'}</td></tr>`).join('')}
+    </table></div>
+  </section>`;
+
+  const bracketMatches = (matches || [])
+    .filter(m => m && (m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'))
+    .slice()
+    .sort((a,b) =>
+      bracketNameRank_v2026(a) - bracketNameRank_v2026(b) ||
+      roundRank_v2028(a) - roundRank_v2028(b) ||
+      Number(a.match_order || 0) - Number(b.match_order || 0) ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  if (!bracketMatches.length) {
+    bracketDiv.innerHTML = '<div class="card">Aucun tableau généré pour le moment.</div>';
+    return;
+  }
+
+  const groups = [];
+  const groupIndex = new Map();
+  const ensureGroup = (key, bRank, rRank) => {
+    if (!groupIndex.has(key)) {
+      groupIndex.set(key, groups.length);
+      groups.push({ title: key, bRank, rRank, list: [], customHtml: '' });
+    }
+    return groups[groupIndex.get(key)];
+  };
+
+  bracketMatches.forEach(m => {
+    const key = bracketGroupTitle_v2026(m);
+    ensureGroup(key, bracketNameRank_v2026(m), roundRank_v2028(m)).list.push(m);
+  });
+
+  // Cas 23 équipes : 7 en consolante. Le 17e du classement est exempt et doit être visible clairement.
+  const consMatches = bracketMatches.filter(m => bracketNameRank_v2026(m) === 1);
+  const consQuarts = consMatches.filter(m => normalizeText_v2026(m.round).includes('quart')).length;
+  const byeDemi = consMatches.find(m => normalizeText_v2026(m.round).includes('demi') && m.team_a && m.team_a !== 'À définir' && (!m.team_b || m.team_b === 'À définir'));
+  if (consQuarts === 3 && byeDemi) {
+    const byeTeam = byeDemi.team_a;
+    const byeRank = ranking.findIndex(r => String(r.name) === String(byeTeam)) + 1;
+    const key = 'Consolante — Exempt / BYE';
+    const g = ensureGroup(key, 1, 1.5);
+    g.customHtml = `<div class="card bye-card"><span class="seed">Qualification directe</span><br><b>${td(byeTeam)}</b>${byeRank ? ` <span class="seed">(${byeRank}e du classement tableaux)</span>` : ''}<br>Qualifié d’office en demi-finale consolante.</div>`;
+  }
+
+  groups.sort((a,b) => a.bRank - b.bRank || a.rRank - b.rRank || String(a.title).localeCompare(String(b.title)));
+
+  bracketDiv.innerHTML = groups.map(group => `
+    <div class="bracket-title">${esc(group.title)}</div>
+    ${group.customHtml || ''}
+    ${group.list.map(m => `<div class="card">
+      <span class="seed">Match ${m.match_order || '-'} · Terrain ${m.court || '-'} · ${sched(m)}</span><br>
+      <b>${td(m.team_a)}</b> vs <b>${td(m.team_b)}</b><br>
+      Gagnant : ${m.winner ? td(m.winner) : '-'} · ${st(m)}
+    </div>`).join('')}
+  `).join('');
+}
