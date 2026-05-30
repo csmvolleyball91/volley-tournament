@@ -7218,3 +7218,153 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.36 - Confort organisateur : historique équipe, filtre terrain, recherche équipe, refresh */
+(function(){
+  window.CSM_BUILD = 'v20.36-confort-organisateur';
+
+  function esc2036(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  function done2036(m) { return ['done','completed','finished'].includes(String(m && m.status || '').toLowerCase()); }
+  function live2036(m) { return ['live','in_progress','playing','started'].includes(String(m && m.status || '').toLowerCase()); }
+  function score2036(m) {
+    const a = m && m.score_a != null ? m.score_a : '-';
+    const b = m && m.score_b != null ? m.score_b : '-';
+    return a + ' - ' + b;
+  }
+  function teamName2036(t) { return typeof t === 'string' ? t : (t && t.name) || ''; }
+  function activeTeams2036() {
+    const count = Number((settings && settings.teams_count) || (typeof getTournamentTeamCount === 'function' ? getTournamentTeamCount() : 24) || 24);
+    return (teams || []).slice(0, count);
+  }
+  function matchSort2036(a,b){
+    const phaseOrder = {'Brassage 1':1,'Brassage 2':2,'Tableau principal':3,'Consolante':4};
+    return (phaseOrder[a.phase]||99)-(phaseOrder[b.phase]||99)
+      || Number(a.court||0)-Number(b.court||0)
+      || Number(a.match_order||0)-Number(b.match_order||0)
+      || Number(a.id||0)-Number(b.id||0);
+  }
+  function courtSort2036(a,b){
+    const statusOrder = function(m){ return live2036(m) ? 0 : (!done2036(m) ? 1 : 2); };
+    return statusOrder(a)-statusOrder(b)
+      || Number(a.match_order||0)-Number(b.match_order||0)
+      || Number(a.id||0)-Number(b.id||0);
+  }
+  function statusLabel2036(m){
+    if (live2036(m)) return '<span class="pill warn">En cours</span>';
+    if (done2036(m)) return '<span class="pill ok">Terminé</span>';
+    return '<span class="pill info">À jouer</span>';
+  }
+  function renderMatchLine2036(m, contextTeam) {
+    const isRef = contextTeam && m.referee_team === contextTeam;
+    const played = contextTeam && (m.team_a === contextTeam || m.team_b === contextTeam);
+    const role = isRef && !played ? 'Arbitre' : (played ? 'Joue' : 'Match');
+    return '<div class="ops-match-row ' + (live2036(m) ? 'is-live' : done2036(m) ? 'is-done' : '') + '">' +
+      '<div><b>' + esc2036(m.phase || '-') + ' · T' + esc2036(m.court || '-') + '</b><small>' + esc2036(m.pool ? 'Poule ' + m.pool : (m.round || '')) + ' · ' + esc2036(role) + '</small></div>' +
+      '<div class="ops-match-teams">' + esc2036(m.team_a || 'À définir') + '<span>vs</span>' + esc2036(m.team_b || 'À définir') + '</div>' +
+      '<div class="ops-match-score"><b>' + esc2036(score2036(m)) + '</b>' + statusLabel2036(m) + '</div>' +
+      '</div>';
+  }
+  function computeTeamQuickStats2036(name, list) {
+    const played = list.filter(function(m){ return m.team_a === name || m.team_b === name; });
+    const done = played.filter(done2036);
+    const live = played.filter(live2036);
+    const next = played.filter(function(m){ return !done2036(m) && !live2036(m); }).sort(matchSort2036)[0];
+    const ref = list.filter(function(m){ return m.referee_team === name; });
+    const refTodo = ref.filter(function(m){ return !done2036(m); }).length;
+    let wins = 0, losses = 0;
+    done.forEach(function(m){ if (m.winner === name) wins++; else losses++; });
+    return { played:played.length, done:done.length, live:live.length, next:next, refs:ref.length, refTodo:refTodo, wins:wins, losses:losses };
+  }
+
+  window.renderOrganizerTools2036 = function(){
+    if (!adminUnlocked) return;
+    const panel = document.getElementById('adminPanel');
+    if (!panel) return;
+    let card = document.getElementById('organizerToolsCard');
+    if (!card) {
+      card = document.createElement('article');
+      card.id = 'organizerToolsCard';
+      card.className = 'admin-card admin-card-wide organizer-tools-card';
+      const anchor = document.getElementById('tournamentMonitoringCard') || document.getElementById('adminMonitoringAlerts') || panel.firstElementChild;
+      if (anchor) anchor.insertAdjacentElement('afterend', card); else panel.insertBefore(card, panel.firstChild);
+    }
+    const active = activeTeams2036();
+    const courts = Array.from(new Set((matches||[]).map(function(m){return Number(m.court);}).filter(Boolean))).sort(function(a,b){return a-b;});
+    card.innerHTML = '<div class="admin-card-head"><div><p class="eyebrow dark">Confort organisateur</p><h3>Recherche équipe & filtre terrain</h3></div><button onclick="refreshTournamentData2036()">Actualiser données</button></div>' +
+      '<div class="organizer-tools-grid">' +
+        '<label><span>Rechercher une équipe</span><input id="opsTeamSearch" list="opsTeamList" placeholder="Nom équipe..." oninput="renderOpsTeam2036()" /></label>' +
+        '<datalist id="opsTeamList">' + active.map(function(t){ return '<option value="' + esc2036(teamName2036(t)) + '">'; }).join('') + '</datalist>' +
+        '<label><span>Filtrer par terrain</span><select id="opsCourtFilter" onchange="renderOpsCourt2036()"><option value="">Choisir un terrain</option>' + courts.map(function(c){ return '<option value="' + c + '">Terrain ' + c + '</option>'; }).join('') + '</select></label>' +
+      '</div>' +
+      '<div class="organizer-results-grid"><div id="opsTeamResult" class="ops-result-panel"><p class="small">Sélectionne une équipe pour voir son historique, son prochain match et ses arbitrages.</p></div><div id="opsCourtResult" class="ops-result-panel"><p class="small">Sélectionne un terrain pour voir les matchs passés, en cours et à venir.</p></div></div>';
+  };
+
+  window.refreshTournamentData2036 = async function(){
+    try {
+      const btns = Array.from(document.querySelectorAll('#organizerToolsCard button'));
+      btns.forEach(function(b){ b.disabled = true; });
+      await loadData();
+      alert('Données actualisées ✅');
+    } catch(e) {
+      alert('Erreur actualisation : ' + (e && e.message ? e.message : e));
+    } finally {
+      setTimeout(function(){ document.querySelectorAll('#organizerToolsCard button').forEach(function(b){ b.disabled = false; }); }, 300);
+    }
+  };
+
+  window.renderOpsTeam2036 = function(){
+    const input = document.getElementById('opsTeamSearch');
+    const div = document.getElementById('opsTeamResult');
+    if (!input || !div) return;
+    const q = String(input.value || '').trim().toLowerCase();
+    if (!q) { div.innerHTML = '<p class="small">Sélectionne une équipe pour voir son historique, son prochain match et ses arbitrages.</p>'; return; }
+    const team = activeTeams2036().find(function(t){ return teamName2036(t).toLowerCase() === q; }) || activeTeams2036().find(function(t){ return teamName2036(t).toLowerCase().includes(q); });
+    if (!team) { div.innerHTML = '<p class="small warn">Aucune équipe trouvée.</p>'; return; }
+    const name = teamName2036(team);
+    const related = (matches || []).filter(function(m){ return m.team_a === name || m.team_b === name || m.referee_team === name; }).sort(matchSort2036);
+    const stats = computeTeamQuickStats2036(name, matches || []);
+    div.innerHTML = '<h4>' + esc2036(name) + (team.level ? ' <span class="level-badge">' + esc2036(team.level) + '</span>' : '') + '</h4>' +
+      '<div class="ops-kpis"><span>Joués : <b>' + stats.done + '</b></span><span>V/D : <b>' + stats.wins + '/' + stats.losses + '</b></span><span>Arbitrages restants : <b>' + stats.refTodo + '</b></span></div>' +
+      (stats.next ? '<div class="ops-next"><b>Prochain match</b>' + renderMatchLine2036(stats.next, name) + '</div>' : '<p class="small">Aucun prochain match identifié.</p>') +
+      '<h5>Historique / planning équipe</h5>' +
+      '<div class="ops-scroll-list">' + (related.length ? related.map(function(m){ return renderMatchLine2036(m, name); }).join('') : '<p class="small">Aucun match.</p>') + '</div>';
+  };
+
+  window.renderOpsCourt2036 = function(){
+    const select = document.getElementById('opsCourtFilter');
+    const div = document.getElementById('opsCourtResult');
+    if (!select || !div) return;
+    const court = Number(select.value || 0);
+    if (!court) { div.innerHTML = '<p class="small">Sélectionne un terrain pour voir les matchs passés, en cours et à venir.</p>'; return; }
+    const list = (matches || []).filter(function(m){ return Number(m.court) === court; }).sort(courtSort2036);
+    const live = list.filter(live2036);
+    const pending = list.filter(function(m){ return !done2036(m) && !live2036(m); });
+    const done = list.filter(done2036);
+    div.innerHTML = '<h4>Terrain ' + court + '</h4>' +
+      '<div class="ops-kpis"><span>En cours : <b>' + live.length + '</b></span><span>À venir : <b>' + pending.length + '</b></span><span>Terminés : <b>' + done.length + '</b></span></div>' +
+      (live.length ? '<h5>En cours</h5><div class="ops-scroll-list compact">' + live.map(renderMatchLine2036).join('') + '</div>' : '') +
+      '<h5>Prochains matchs</h5><div class="ops-scroll-list compact">' + (pending.length ? pending.slice(0, 12).map(renderMatchLine2036).join('') : '<p class="small">Aucun match à venir sur ce terrain.</p>') + '</div>' +
+      '<h5>Derniers terminés</h5><div class="ops-scroll-list compact">' + (done.length ? done.slice(-8).reverse().map(renderMatchLine2036).join('') : '<p class="small">Aucun match terminé.</p>') + '</div>';
+  };
+
+  const prevAdmin2036 = window.renderAdmin || renderAdmin;
+  window.renderAdmin = renderAdmin = function(){
+    prevAdmin2036();
+    try { renderOrganizerTools2036(); } catch(e) { console.warn('organizer tools', e); }
+  };
+
+  const prevAll2036 = window.renderAll || renderAll;
+  window.renderAll = renderAll = function(){
+    prevAll2036();
+    try { renderOrganizerTools2036(); } catch(e) { console.warn('organizer tools', e); }
+  };
+
+  console.log(window.CSM_BUILD);
+})();
