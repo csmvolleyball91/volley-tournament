@@ -8350,3 +8350,277 @@ function getPodiumData(){
   css.textContent = '.test-brackets-card{border-left:6px solid #f59e0b}.test-brackets-card .admin-big-action{background:#f59e0b;color:#082f49;font-weight:950}';
   document.head.appendChild(css);
 })();
+
+
+
+// v20.48 - Bouton test intégré + PNG podium premium avec logo
+(function(){
+  window.CSM_BUILD = 'v20.48-podium-png-premium';
+
+  function findTestsGrid(){
+    const cards = Array.from(document.querySelectorAll('.admin-card'));
+    for (const card of cards) {
+      const eyebrow = (card.querySelector('.eyebrow')?.textContent || '').trim().toLowerCase();
+      const h3 = (card.querySelector('h3')?.textContent || '').trim().toLowerCase();
+      if (eyebrow.includes('tests') && h3.includes('résultats fictifs')) {
+        return card.querySelector('.admin-actions-grid') || card;
+      }
+    }
+    return null;
+  }
+
+  function removeOldSimulationCard(){
+    document.querySelectorAll('.test-brackets-card').forEach(el => el.remove());
+  }
+
+  function ensureFillBracketsButtonV2048(){
+    removeOldSimulationCard();
+    const grid = findTestsGrid();
+    if (!grid) return;
+    if (document.getElementById('fillAllBracketsTestBtn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'fillAllBracketsTestBtn';
+    btn.type = 'button';
+    btn.className = 'test-fill-brackets-btn';
+    btn.textContent = 'Remplir tous les tableaux';
+    btn.onclick = function(){ window.adminFillAllBracketMatches && window.adminFillAllBracketMatches(); };
+
+    const resetBtn = Array.from(grid.querySelectorAll('button')).find(b => /reset complet/i.test(b.textContent || ''));
+    if (resetBtn) grid.insertBefore(btn, resetBtn);
+    else grid.appendChild(btn);
+  }
+
+  // On écrase l'ancien hook qui créait une carte séparée.
+  window.ensureFillBracketsButton = ensureFillBracketsButtonV2048;
+
+  function loadClubLogo(){
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = 'club-logo.png';
+    });
+  }
+
+  function getPodiumSafe(){
+    if (typeof window.getPodiumData === 'function') return window.getPodiumData();
+    return null;
+  }
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines){
+    const words = String(text || '').split(/\s+/);
+    let line = '';
+    let lines = [];
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else line = test;
+    }
+    if (line) lines.push(line);
+    if (maxLines && lines.length > maxLines) {
+      lines = lines.slice(0, maxLines);
+      let last = lines[lines.length - 1];
+      while (ctx.measureText(last + '…').width > maxWidth && last.length > 3) last = last.slice(0, -1);
+      lines[lines.length - 1] = last + '…';
+    }
+    lines.forEach((l, i) => ctx.fillText(l, x, y + i * lineHeight));
+    return lines.length * lineHeight;
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+
+  function drawGlow(ctx, x, y, r, color){
+    const g = ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawPodiumBlock(ctx, opts){
+    const {x,y,w,h,rank,medal,name,color,rankColor} = opts;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.22)';
+    ctx.shadowBlur = 26;
+    ctx.shadowOffsetY = 14;
+    ctx.fillStyle = color;
+    roundRect(ctx, x, y, w, h, 32);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    roundRect(ctx, x+14, y+14, w-28, h-28, 24);
+    ctx.fill();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = rankColor || '#002b5c';
+    ctx.font = '900 72px Arial, sans-serif';
+    ctx.fillText(medal, x + w/2, y + 88);
+
+    ctx.fillStyle = '#002b5c';
+    ctx.font = '900 32px Arial, sans-serif';
+    ctx.fillText(rank, x + w/2, y + 132);
+
+    ctx.font = '900 36px Arial, sans-serif';
+    wrapText(ctx, name || '-', x + w/2, y + 188, w - 50, 40, 2);
+  }
+
+  window.exportPodiumPng = async function(){
+    const p = getPodiumSafe();
+    if (!p) { alert('Podium non disponible : termine la finale principale.'); return; }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1400;
+    canvas.height = 1400;
+    const ctx = canvas.getContext('2d');
+
+    // Fond premium bleu / jaune CSM
+    const bg = ctx.createLinearGradient(0,0,1400,1400);
+    bg.addColorStop(0, '#001f4d');
+    bg.addColorStop(0.42, '#004b9b');
+    bg.addColorStop(0.76, '#0b5bbb');
+    bg.addColorStop(1, '#ffcf22');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,1400,1400);
+
+    drawGlow(ctx, 250, 180, 360, 'rgba(255,207,34,.32)');
+    drawGlow(ctx, 1200, 1120, 420, 'rgba(255,255,255,.18)');
+    drawGlow(ctx, 1100, 180, 280, 'rgba(255,207,34,.24)');
+
+    // Motif léger
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 3;
+    for(let i=-200;i<1600;i+=95){
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i+520, 1400);
+      ctx.stroke();
+    }
+
+    // Carte principale
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.28)';
+    ctx.shadowBlur = 42;
+    ctx.shadowOffsetY = 22;
+    ctx.fillStyle = 'rgba(255,255,255,.94)';
+    roundRect(ctx, 90, 90, 1220, 1220, 48);
+    ctx.fill();
+    ctx.restore();
+
+    // Logo
+    const logo = await loadClubLogo();
+    if (logo) {
+      ctx.save();
+      ctx.globalAlpha = .16;
+      ctx.drawImage(logo, 470, 330, 460, 460);
+      ctx.restore();
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(700, 185, 72, 0, Math.PI*2);
+      ctx.clip();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(628,113,144,144);
+      ctx.drawImage(logo, 628, 113, 144, 144);
+      ctx.restore();
+    }
+
+    // Header
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#002b5c';
+    ctx.font = '900 54px Arial, sans-serif';
+    ctx.fillText('CSM VOLLEYBALL 91', 700, 320);
+
+    ctx.fillStyle = '#0b5bbb';
+    ctx.font = '900 82px Arial, sans-serif';
+    ctx.fillText('PODIUM FINAL', 700, 410);
+
+    ctx.fillStyle = '#ffcf22';
+    roundRect(ctx, 490, 442, 420, 10, 5);
+    ctx.fill();
+
+    // Podium visuel
+    drawPodiumBlock(ctx, {
+      x: 455, y: 535, w: 490, h: 355,
+      rank: '1ère place',
+      medal: '🥇',
+      name: p.first || '-',
+      color: '#ffcf22',
+      rankColor: '#002b5c'
+    });
+
+    drawPodiumBlock(ctx, {
+      x: 150, y: 710, w: 380, h: 305,
+      rank: '2e place',
+      medal: '🥈',
+      name: p.second || '-',
+      color: '#e2e8f0',
+      rankColor: '#334155'
+    });
+
+    drawPodiumBlock(ctx, {
+      x: 870, y: 735, w: 380, h: 280,
+      rank: '3e place',
+      medal: '🥉',
+      name: p.third || 'Petite finale à terminer',
+      color: '#fed7aa',
+      rankColor: '#7c2d12'
+    });
+
+    // Footer
+    ctx.fillStyle = '#002b5c';
+    ctx.font = '800 34px Arial, sans-serif';
+    ctx.fillText('Tournoi CSM Volleyball 91', 700, 1130);
+
+    ctx.fillStyle = '#475569';
+    ctx.font = '700 26px Arial, sans-serif';
+    const teamCount = (window.teams || teams || []).length || '';
+    const date = new Date().toLocaleDateString('fr-FR');
+    ctx.fillText((teamCount ? teamCount + ' équipes · ' : '') + date, 700, 1175);
+
+    ctx.fillStyle = '#0b5bbb';
+    ctx.font = '900 30px Arial, sans-serif';
+    ctx.fillText('tournoi.csmvolleyball91.fr', 700, 1234);
+
+    const a = document.createElement('a');
+    a.download = 'podium-final-csm-volleyball-91.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  };
+
+  const prevRenderAdminV2048 = window.renderAdmin || (typeof renderAdmin !== 'undefined' ? renderAdmin : null);
+  if (prevRenderAdminV2048) {
+    window.renderAdmin = renderAdmin = function(){
+      prevRenderAdminV2048();
+      try { ensureFillBracketsButtonV2048(); } catch(e) { console.warn('v20.48 tests button', e); }
+    };
+  }
+
+  const prevRenderAllV2048 = window.renderAll || (typeof renderAll !== 'undefined' ? renderAll : null);
+  if (prevRenderAllV2048) {
+    window.renderAll = renderAll = function(){
+      prevRenderAllV2048();
+      try { ensureFillBracketsButtonV2048(); } catch(e) { console.warn('v20.48 tests button all', e); }
+    };
+  }
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .test-fill-brackets-btn{background:#f59e0b!important;color:#082f49!important;font-weight:950!important}
+    .test-brackets-card{display:none!important}
+  `;
+  document.head.appendChild(css);
+})();
