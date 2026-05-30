@@ -8868,3 +8868,222 @@ function getPodiumData(){
 
   window.getConsolantePodium = getConsolantePodium;
 })();
+
+
+
+
+// v20.52 - Fix PNG : podium consolante toujours présent et extraction plus robuste
+(function(){
+  window.CSM_BUILD = 'v20.52-fix-podium-consolante-png';
+
+  function clean(v){
+    return String(v || '').trim();
+  }
+  function norm(v){
+    return clean(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  }
+  function done(m){
+    const s = norm(m && m.status);
+    return s === 'done' || s === 'completed';
+  }
+  function loserOf(m){
+    if (!m || !m.winner) return '';
+    if (m.team_a === m.winner) return m.team_b || '';
+    if (m.team_b === m.winner) return m.team_a || '';
+    return '';
+  }
+  function isConso(m){
+    const b = norm(m && m.bracket);
+    const p = norm(m && m.phase);
+    return b.includes('consol') || p.includes('consol');
+  }
+  function isPrincipal(m){
+    const b = norm(m && m.bracket);
+    const p = norm(m && m.phase);
+    return !isConso(m) && (b.includes('principal') || p.includes('principal') || p.includes('tableau'));
+  }
+  function isFinal(m){
+    const r = norm(m && m.round);
+    return r.includes('final') && !r.includes('petite') && !r.includes('3e') && !r.includes('troisieme');
+  }
+  function isSmallFinal(m){
+    const r = norm(m && m.round);
+    return r.includes('petite') || r.includes('3e') || r.includes('troisieme');
+  }
+
+  function podiumByKind(kind){
+    const rows = (window.matches || (typeof matches !== 'undefined' ? matches : []));
+    const list = rows.filter(m => kind === 'consolante' ? isConso(m) : isPrincipal(m));
+
+    const finale = list
+      .filter(m => isFinal(m) && done(m) && m.winner)
+      .sort((a,b) => Number(b.match_order || 0) - Number(a.match_order || 0))[0];
+
+    if (!finale) return null;
+
+    const petite = list
+      .filter(m => isSmallFinal(m) && done(m) && m.winner)
+      .sort((a,b) => Number(b.match_order || 0) - Number(a.match_order || 0))[0];
+
+    return {
+      first: finale.winner || '',
+      second: loserOf(finale),
+      third: petite && petite.winner ? petite.winner : ''
+    };
+  }
+
+  window.getConsolantePodium = function(){
+    return podiumByKind('consolante');
+  };
+
+  function title(){
+    try {
+      const s = window.settings || (typeof settings !== 'undefined' ? settings : {});
+      return clean(s.tournament_name || s.tournament_title || localStorage.getItem('csm_tournament_name') || 'Tournoi Damien Terra 2026') || 'Tournoi Damien Terra 2026';
+    } catch(e) { return 'Tournoi Damien Terra 2026'; }
+  }
+
+  function loadLogo(){
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = 'club-logo.png';
+    });
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+  function fit(ctx,text,max,start,min){
+    let s=start, t=clean(text)||'-';
+    while(s>=min){
+      ctx.font='950 '+s+'px Arial, sans-serif';
+      if(ctx.measureText(t).width<=max) return s;
+      s-=2;
+    }
+    return min;
+  }
+  function drawFit(ctx,text,x,y,max,start,min,color){
+    const s=fit(ctx,text,max,start,min);
+    ctx.font='950 '+s+'px Arial, sans-serif';
+    ctx.fillStyle=color||'#001f4d';
+    ctx.textAlign='center';
+    let t=clean(text)||'-';
+    while(ctx.measureText(t).width>max && t.length>6) t=t.slice(0,-2)+'…';
+    ctx.fillText(t,x,y);
+  }
+  function glow(ctx,x,y,r,c){
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,c); g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  function medal(ctx,x,y,r,fill,num){
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.30)'; ctx.shadowBlur=20; ctx.shadowOffsetY=10;
+    ctx.fillStyle=fill; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=Math.max(5,r*.1);
+    ctx.beginPath(); ctx.arc(x,y,r-ctx.lineWidth,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='#001f4d'; ctx.textAlign='center'; ctx.font='950 '+Math.round(r*1.05)+'px Arial, sans-serif';
+    ctx.fillText(num,x,y+r*.35);
+  }
+
+  function drawMain(ctx,p){
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.20)'; ctx.shadowBlur=34; ctx.shadowOffsetY=16;
+    ctx.fillStyle='rgba(255,255,255,.96)'; roundRect(ctx,115,455,1170,540,44); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle='#002b5c'; ctx.textAlign='center'; ctx.font='950 48px Arial, sans-serif';
+    ctx.fillText('PODIUM PRINCIPAL',700,525);
+
+    ctx.save();
+    ctx.shadowColor='rgba(255,207,34,.55)'; ctx.shadowBlur=42;
+    ctx.fillStyle='#ffcf22'; roundRect(ctx,300,575,800,185,40); ctx.fill();
+    ctx.restore();
+    medal(ctx,395,667,56,'#ffffff','1');
+    drawFit(ctx,p.first,740,668,600,52,26,'#001f4d');
+    ctx.fillStyle='#002b5c'; ctx.font='900 24px Arial, sans-serif'; ctx.fillText('CHAMPION',740,715);
+
+    ctx.fillStyle='#e2e8f0'; roundRect(ctx,195,805,470,135,32); ctx.fill();
+    medal(ctx,260,872,42,'#f8fafc','2');
+    drawFit(ctx,p.second || '-',470,872,320,32,18,'#001f4d');
+    ctx.fillStyle='#475569'; ctx.font='850 18px Arial, sans-serif'; ctx.fillText('FINALISTE',470,910);
+
+    ctx.fillStyle='#fed7aa'; roundRect(ctx,735,805,470,135,32); ctx.fill();
+    medal(ctx,800,872,42,'#fff7ed','3');
+    drawFit(ctx,p.third || 'Petite finale à terminer',1010,872,320,32,18,'#001f4d');
+    ctx.fillStyle='#9a3412'; ctx.font='850 18px Arial, sans-serif'; ctx.fillText('3E PLACE',1010,910);
+  }
+
+  function drawConso(ctx,p){
+    // Toujours visible, même si consolante pas terminée
+    ctx.fillStyle='rgba(0,43,92,.96)';
+    roundRect(ctx,115,1030,1170,220,38);
+    ctx.fill();
+
+    ctx.fillStyle='#ffcf22'; ctx.textAlign='center'; ctx.font='950 36px Arial, sans-serif';
+    ctx.fillText('PODIUM CONSOLANTE',700,1088);
+
+    const data = p || {first:'Consolante à terminer', second:'-', third:'-'};
+    const items=[
+      ['1', data.first || 'Consolante à terminer', '#ffcf22'],
+      ['2', data.second || '-', '#e2e8f0'],
+      ['3', data.third || 'Petite finale à terminer', '#fed7aa']
+    ];
+    const xs=[310,700,1090];
+
+    items.forEach((it,i)=>{
+      medal(ctx,xs[i]-120,1162,34,it[2],it[0]);
+      drawFit(ctx,it[1],xs[i]+35,1168,270,27,15,'#ffffff');
+    });
+  }
+
+  window.exportPodiumPng = async function(){
+    const main = podiumByKind('principal');
+    if(!main){ alert('Podium non disponible : termine la finale principale.'); return; }
+    const conso = podiumByKind('consolante');
+
+    const canvas=document.createElement('canvas');
+    canvas.width=1400; canvas.height=1400;
+    const ctx=canvas.getContext('2d');
+
+    const bg=ctx.createLinearGradient(0,0,1400,1400);
+    bg.addColorStop(0,'#001a44'); bg.addColorStop(.38,'#004b9b'); bg.addColorStop(.76,'#0b5bbb'); bg.addColorStop(1,'#ffcf22');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,1400,1400);
+    glow(ctx,210,170,450,'rgba(255,207,34,.32)');
+    glow(ctx,1180,1120,520,'rgba(255,255,255,.18)');
+
+    ctx.strokeStyle='rgba(255,255,255,.075)'; ctx.lineWidth=3;
+    for(let i=-350;i<1650;i+=88){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+570,1400); ctx.stroke(); }
+
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.34)'; ctx.shadowBlur=48; ctx.shadowOffsetY=24;
+    ctx.fillStyle='rgba(255,255,255,.10)'; roundRect(ctx,55,55,1290,1290,58); ctx.fill();
+    ctx.restore();
+
+    const logo=await loadLogo();
+    if(logo){
+      ctx.save(); ctx.globalAlpha=.11; ctx.drawImage(logo,470,480,460,460); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.arc(700,150,72,0,Math.PI*2); ctx.clip();
+      ctx.fillStyle='#fff'; ctx.fillRect(628,78,144,144); ctx.drawImage(logo,628,78,144,144); ctx.restore();
+    }
+
+    ctx.textAlign='center'; ctx.fillStyle='#ffffff'; ctx.font='950 42px Arial, sans-serif'; ctx.fillText('CSM VOLLEYBALL 91',700,270);
+    drawFit(ctx,title().toUpperCase(),700,350,1160,74,38,'#ffcf22');
+    ctx.fillStyle='#ffffff'; ctx.font='950 54px Arial, sans-serif'; ctx.fillText('RÉSULTATS FINAUX',700,420);
+
+    drawMain(ctx,main);
+    drawConso(ctx,conso);
+
+    ctx.fillStyle='rgba(255,255,255,.92)'; ctx.font='850 28px Arial, sans-serif'; ctx.fillText('tournoi.csmvolleyball91.fr',700,1304);
+
+    const a=document.createElement('a');
+    a.download=title().toLowerCase().replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')+'-podiums.png';
+    a.href=canvas.toDataURL('image/png');
+    a.click();
+  };
+})();
