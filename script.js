@@ -6748,3 +6748,66 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+
+/* v20.31 - Classement: dans les poules de Brassage 2, afficher les équipes dans l'ordre du classement B1 */
+(function(){
+  window.CSM_BUILD = 'v20.31-classement-b2-ordre-b1';
+
+  function safeRatioV2031(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  }
+  function b1RankMapV2031(){
+    try {
+      const ranking = (typeof phaseGlobalRanking === 'function') ? phaseGlobalRanking('Brassage 1') : [];
+      const map = {};
+      ranking.forEach((r, idx) => { if (r && r.name) map[r.name] = idx + 1; });
+      return map;
+    } catch(e) {
+      return {};
+    }
+  }
+  function sortB2RowsByB1V2031(rows){
+    const b1Rank = b1RankMapV2031();
+    return [...rows].sort((a,b) => {
+      const ra = b1Rank[a[0]] || 9999;
+      const rb = b1Rank[b[0]] || 9999;
+      return (ra - rb) || String(a[0]).localeCompare(String(b[0]));
+    });
+  }
+
+  window.renderStandings = renderStandings = function() {
+    const div = document.getElementById('standingsView');
+    if (!div) return;
+    const phases = [...new Set((matches || []).map(m => m.phase))]
+      .filter(p => String(p).includes('Brassage'))
+      .sort((a,b) => String(a).localeCompare(String(b), 'fr', { numeric:true }));
+    let html = '';
+    phases.forEach(phase => {
+      const pools = [...new Set((matches || []).filter(m => m.phase === phase).map(m => m.pool))]
+        .filter(Boolean)
+        .sort((a,b) => String(a).localeCompare(String(b), 'fr', { numeric:true }));
+      const isB2 = phase === 'Brassage 2';
+      html += `<div class="ranking-phase"><div class="ranking-phase-title"><span>${phase}</span><small>${isB2 ? 'Affichage des poules : ordre du classement Brassage 1, du meilleur au moins bon' : 'Classement : % victoires, ratio points marqués/encaissés, puis points marqués'}</small></div><div class="ranking-grid">`;
+      pools.forEach(pool => {
+        let statsRows = (typeof poolStats === 'function') ? poolStats(phase, pool) : [];
+        if (isB2) statsRows = sortB2RowsByB1V2031(statsRows);
+        const b1Rank = b1RankMapV2031();
+        const topThree = statsRows.slice(0,3).map(([name,s],i) => {
+          const rankInfo = isB2 ? `<em>#${b1Rank[name] || '-'} B1</em> · ` : '';
+          return `<div class="ranking-podium-item rank-${i+1}"><span class="ranking-medal">${i===0?'🥇':i===1?'🥈':'🥉'}</span><strong>${teamDisplay(name)}</strong><small>${rankInfo}${Math.round((Number(s && s.winPct)||0)*100)}% · Ratio ${safeRatioV2031(s && s.ratio)}</small></div>`;
+        }).join('');
+        const rows = statsRows.map(([name,s],i) => {
+          const rankInfo = isB2 ? `<small class="muted">#${b1Rank[name] || '-'} B1</small>` : '';
+          return `<tr class="rank-row ${i<3?'rank-highlight':''}"><td><span class="rank-badge">${i+1}</span></td><td class="team-cell"><b>${teamDisplay(name)}</b>${rankInfo}</td><td class="score-cell">${Math.round((Number(s && s.winPct)||0)*100)}%</td><td>${safeRatioV2031(s && s.ratio)}</td><td>${Number(s && s.mj)||0}</td><td>${Number(s && s.v)||0}</td><td>${Number(s && s.d)||0}</td><td>${Number(s && s.pm)||0}</td></tr>`;
+        }).join('');
+        html += `<section class="ranking-card"><div class="ranking-card-head"><h3>Poule ${pool}</h3><span>${statsRows.length} équipes</span></div><div class="ranking-podium">${topThree}</div><div class="table-scroll"><table class="ranking-table"><tr><th>#</th><th>Équipe</th><th>%V</th><th>Ratio</th><th>MJ</th><th>V</th><th>D</th><th>PM</th></tr>${rows}</table></div></section>`;
+      });
+      html += `</div></div>`;
+    });
+    div.innerHTML = html || '<div class="card">Aucun classement disponible.</div>';
+  };
+
+  console.log(window.CSM_BUILD);
+})();
