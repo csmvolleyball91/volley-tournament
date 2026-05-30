@@ -6477,3 +6477,185 @@ function renderBrackets() {
     </div>`).join('')}
   `).join('');
 }
+
+
+/* v20.29 - Admin: modification manuelle des poules de Brassage 1
+   Objectif : pouvoir déplacer une équipe en poule A-F depuis Admin.
+   Le Reset complet conserve les noms/niveaux/poules et génère B1 à partir de ces poules manuelles.
+*/
+(function(){
+  window.CSM_BUILD = 'v20.29-poules-b1-manuelles';
+  window.BUILD_V20 = window.CSM_BUILD;
+
+  function escAttrV2029(v){
+    if (typeof escapeAttr === 'function') return escapeAttr(v);
+    return String(v ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function levelShortV2029(v){
+    return (typeof levelShort === 'function') ? levelShort(v) : String(v || 'LOISIR').toUpperCase();
+  }
+  function teamDefaultNameV2029(i){
+    return (typeof defaultTeamNameByIndex === 'function') ? defaultTeamNameByIndex(i) : `Équipe ${String(i).padStart(2,'0')}`;
+  }
+  function courtCountV2029(){
+    return Math.max(1, Number((settings && settings.courts_count) || 6));
+  }
+  function desiredCountV2029(){
+    return (typeof getTournamentTeamCount === 'function') ? Number(getTournamentTeamCount()) : Number((settings && settings.teams_count) || 24);
+  }
+  function poolLabelsV2029(){
+    return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').slice(0, courtCountV2029());
+  }
+  function sortedTeamsV2029(){
+    return (teams || []).slice().sort((a,b)=>Number(a.id||0)-Number(b.id||0));
+  }
+  function defaultPoolForIndexV2029(index, desired){
+    if (typeof poolLabelForTeamIndex === 'function') return poolLabelForTeamIndex(index, desired);
+    const labels = poolLabelsV2029();
+    return labels[(index-1) % labels.length] || 'A';
+  }
+  function teamRowAdminV2029(index){
+    const sorted = sortedTeamsV2029();
+    const existing = sorted[index-1];
+    const desired = desiredCountV2029();
+    if (existing) return { ...existing, __index:index, __new:false };
+    return { id:null, __index:index, name:teamDefaultNameV2029(index), level:'Loisir', initial_pool:defaultPoolForIndexV2029(index, desired), __new:true };
+  }
+
+  window.activeTeams = activeTeams = function(){
+    return sortedTeamsV2029().slice(0, desiredCountV2029());
+  };
+
+  window.ensureConfiguredTeamsInDb = ensureConfiguredTeamsInDb = async function(){
+    const desired = desiredCountV2029();
+    let sorted = sortedTeamsV2029();
+    const missing = Math.max(0, desired - sorted.length);
+    if (missing > 0) {
+      const rows = [];
+      for (let i=0; i<missing; i++) {
+        const idx = sorted.length + i + 1;
+        rows.push({
+          name: teamDefaultNameV2029(idx),
+          level: 'Loisir',
+          initial_pool: defaultPoolForIndexV2029(idx, desired)
+        });
+      }
+      const ins = await client.from('teams').insert(rows);
+      if (ins.error) throw new Error('création équipe(s) manquante(s) : ' + ins.error.message);
+    }
+    const ref = await client.from('teams').select('*').order('id');
+    if (ref.error) throw new Error('rechargement équipes : ' + ref.error.message);
+    teams = ref.data || [];
+    return activeTeams();
+  };
+
+  const prevRenderAdminV2029 = (typeof renderAdmin === 'function') ? renderAdmin : null;
+  window.renderAdmin = renderAdmin = function(){
+    if (prevRenderAdminV2029) prevRenderAdminV2029();
+    if (!settings) return;
+
+    const div = document.getElementById('teamsAdmin');
+    if (div) {
+      const desired = desiredCountV2029();
+      const sorted = sortedTeamsV2029();
+      const hiddenCount = Math.max(0, sorted.length - desired);
+      const labels = poolLabelsV2029();
+      const rows = Array.from({length: desired}, (_,i)=>teamRowAdminV2029(i+1));
+      div.innerHTML =
+        (hiddenCount ? `<div class="admin-info">${hiddenCount} équipe(s) au-delà de la configuration sont masquées et ne seront pas utilisées.</div>` : '') +
+        `<div class="admin-info">Tu peux modifier les noms, niveaux et poules B1. Les poules doivent idéalement contenir 3 à 5 équipes.</div>` +
+        rows.map(t => {
+          const idx = Number(t.__index || 0);
+          const realId = t.id == null ? '' : String(t.id);
+          const currentPool = String(t.initial_pool || defaultPoolForIndexV2029(idx, desired) || 'A').toUpperCase();
+          const level = levelShortV2029(t.level);
+          const optsPool = labels.map(p => `<option value="${p}" ${p===currentPool?'selected':''}>Poule ${p}</option>`).join('');
+          return `<div class="team-edit team-edit-level team-edit-pool ${t.__new ? 'team-edit-new' : ''}">
+            <span class="team-edit-code">${currentPool}${String(idx).padStart(2,'0')}</span>
+            <input data-team-index="${idx}" data-team-real-id="${escAttrV2029(realId)}" data-team-new="${t.__new?'1':'0'}" value="${escAttrV2029(t.name)}" />
+            <select data-team-level-index="${idx}">
+              <option value="Loisir" ${level==='LOISIR'?'selected':''}>Loisir</option>
+              <option value="Dép" ${level==='DEP'?'selected':''}>Dép</option>
+              <option value="Rég" ${level==='REG'?'selected':''}>Rég</option>
+              <option value="Nat" ${level==='NAT'?'selected':''}>Nat</option>
+            </select>
+            <select data-team-pool-index="${idx}" class="pool-select">${optsPool}</select>
+          </div>`;
+        }).join('');
+    }
+
+    try { if (typeof renderCodesAdminStable === 'function') renderCodesAdminStable(); } catch(e) { console.error('codes arbitres render', e); }
+    try { document.querySelectorAll('.admin-priority-tools,.admin-quick-tools,.quick-admin-tools').forEach(el=>el.remove()); } catch(e) {}
+  };
+
+  window.saveTeams = saveTeams = async function(){
+    if (!adminUnlocked) return;
+    const inputs = [...document.querySelectorAll('[data-team-index]')];
+    for (const input of inputs) {
+      const idx = Number(input.dataset.teamIndex);
+      const realId = input.dataset.teamRealId ? Number(input.dataset.teamRealId) : null;
+      const levelSel = document.querySelector(`[data-team-level-index="${idx}"]`);
+      const poolSel = document.querySelector(`[data-team-pool-index="${idx}"]`);
+      const payload = {
+        name: input.value || teamDefaultNameV2029(idx),
+        level: levelSel ? levelSel.value : 'Loisir',
+        initial_pool: poolSel ? poolSel.value : defaultPoolForIndexV2029(idx, desiredCountV2029())
+      };
+      const result = realId
+        ? await client.from('teams').update(payload).eq('id', realId)
+        : await client.from('teams').insert(payload);
+      if (result.error) {
+        const msg = document.getElementById('adminMsg');
+        if (msg) msg.innerText = 'Erreur sauvegarde équipe : ' + result.error.message;
+        return;
+      }
+    }
+    const msg = document.getElementById('adminMsg');
+    if (msg) msg.innerText = 'Noms, niveaux et poules B1 sauvegardés ✅';
+    await loadData();
+  };
+
+  function validateManualPoolsV2029(groups){
+    const bad = [];
+    Object.keys(groups).sort().forEach(pool => {
+      const n = groups[pool].length;
+      if (n > 0 && (n < 3 || n > 5)) bad.push(`Poule ${pool} : ${n} équipe(s)`);
+    });
+    if (bad.length) throw new Error('Répartition B1 invalide. Chaque poule utilisée doit avoir 3 à 5 équipes. ' + bad.join(' / '));
+  }
+
+  window.generateBrassage1Rows = generateBrassage1Rows = function(){
+    const rows = [];
+    const count = desiredCountV2029();
+    const list = activeTeams();
+    if (list.length < count) throw new Error(`Il manque ${count-list.length} équipe(s) dans la table teams. Clique sur Sauvegarder noms/niveaux/poules ou vérifie les droits INSERT de la table teams.`);
+
+    const labels = poolLabelsV2029();
+    const groups = {};
+    labels.forEach(p => groups[p] = []);
+    list.forEach((t, i) => {
+      let pool = String(t.initial_pool || '').toUpperCase();
+      if (!groups[pool]) pool = defaultPoolForIndexV2029(i+1, count);
+      if (!groups[pool]) pool = labels[i % labels.length] || 'A';
+      groups[pool].push(t.name);
+    });
+    validateManualPoolsV2029(groups);
+    labels.forEach((pool, idx) => {
+      const poolTeams = groups[pool] || [];
+      if (!poolTeams.length) return;
+      rows.push(...generateRoundRobinRows('Brassage 1', pool, idx+1, poolTeams, settings.start_time));
+    });
+    return withAccessCodes(assignBalancedRefsInPools(rows, {}), 1);
+  };
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .team-edit-pool{grid-template-columns:96px minmax(180px,1fr) 120px 120px; gap:10px; align-items:center;}
+    .team-edit-pool .pool-select{font-weight:800; color:#003b7a;}
+    .team-edit-code{font-weight:900;color:#315b8f;}
+    @media(max-width:700px){.team-edit-pool{grid-template-columns:70px 1fr;}.team-edit-pool select{width:100%;}}
+  `;
+  document.head.appendChild(css);
+
+  console.log(window.CSM_BUILD);
+})();
