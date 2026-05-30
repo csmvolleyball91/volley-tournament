@@ -7592,10 +7592,25 @@ function renderBrackets() {
     return '';
   }
   function sched(m){
+    if (isDone(m)) {
+      return m.completed_at ? ('Terminé à ' + formatTime(m.completed_at)) : 'Terminé';
+    }
+    if (isLive(m)) {
+      return 'En cours';
+    }
     const direct = (typeof computedScheduledTime === 'function' && computedScheduledTime(m)) || m.scheduled_time || '';
     if (direct) return direct;
     const forecast = bracketEstimatedTime2040(m);
-    return forecast ? ('Prévision ' + forecast) : 'Horaire à définir';
+    if (!forecast) return 'Horaire à définir';
+    try {
+      const p = forecast.split(':');
+      const target = new Date();
+      target.setHours(Number(p[0]||0), Number(p[1]||0),0,0);
+      const mins = Math.round((target.getTime()-Date.now())/60000);
+      return mins > 0 ? ('Prévision ' + forecast + ' · ≈ dans ' + mins + ' min') : ('Prévision ' + forecast);
+    } catch(e) {
+      return 'Prévision ' + forecast;
+    }
   }
   function isDone(m){
     if (!m) return false;
