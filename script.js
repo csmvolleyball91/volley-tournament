@@ -1906,11 +1906,15 @@ function renderBrackets() {
 
   bracketDiv.innerHTML = Object.entries(groups).map(([title, list]) => `
     <div class="bracket-title">${title}</div>
-    ${list.map(m => `<div class="card">
+    <div class="bracket-tree">
+    ${list.map(m => {
+      const cls = m.status==='done'?'done':(m.status==='running'?'running':'pending');
+      return `<div class="card bracket-node ${cls}">
       <span class="seed">Match ${m.match_order} · Terrain ${m.court || '-'} · ${computedScheduledTime(m) || 'Horaire à définir'}</span><br>
       <b>${m.team_a || 'À définir'}</b> vs <b>${m.team_b || 'À définir'}</b><br>
       Gagnant : ${m.winner || '-'} · ${statusText(m)}
-    </div>`).join('')}
+    </div>`}).join('')}
+    </div>
   `).join('');
 }
 
