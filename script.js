@@ -8624,3 +8624,247 @@ function getPodiumData(){
   `;
   document.head.appendChild(css);
 })();
+
+
+
+// v20.49 - Nom tournoi configurable + PNG podium premium sans emojis médailles
+(function(){
+  window.CSM_BUILD = 'v20.49-nom-tournoi-podium-premium';
+
+  function getTournamentTitle(){
+    try {
+      const s = (window.settings || settings || {});
+      const v = s.tournament_name || s.tournament_title || localStorage.getItem('csm_tournament_name') || 'Tournoi Damien Terra 2026';
+      return String(v).trim() || 'Tournoi Damien Terra 2026';
+    } catch(e) {
+      return 'Tournoi Damien Terra 2026';
+    }
+  }
+
+  function ensureTournamentNameField(){
+    const cfgStart = document.getElementById('cfgStart');
+    if (!cfgStart) return;
+    let input = document.getElementById('cfgTournamentName');
+    if (!input) {
+      const label = document.createElement('label');
+      label.innerHTML = 'Nom du tournoi <input id="cfgTournamentName" placeholder="Tournoi Damien Terra 2026" />';
+      const parentLabel = cfgStart.closest('label');
+      if (parentLabel && parentLabel.parentNode) parentLabel.parentNode.insertBefore(label, parentLabel);
+    }
+    input = document.getElementById('cfgTournamentName');
+    if (input && !input.value) input.value = getTournamentTitle();
+  }
+
+  const previousSaveSettings2049 = window.saveSettings || (typeof saveSettings !== 'undefined' ? saveSettings : null);
+  if (previousSaveSettings2049) {
+    window.saveSettings = saveSettings = async function(){
+      const input = document.getElementById('cfgTournamentName');
+      const name = input ? String(input.value || '').trim() : '';
+      if (name) {
+        try { localStorage.setItem('csm_tournament_name', name); } catch(e) {}
+        if (typeof settings !== 'undefined' && settings) settings.tournament_name = name;
+      }
+      await previousSaveSettings2049();
+      if (name) {
+        try {
+          const res = await client.from('settings').update({ tournament_name: name }).eq('id', 1);
+          if (res && res.error) console.warn('tournament_name local seulement', res.error.message);
+        } catch(e) {}
+      }
+    };
+  }
+
+  const previousRenderAdmin2049 = window.renderAdmin || (typeof renderAdmin !== 'undefined' ? renderAdmin : null);
+  if (previousRenderAdmin2049) {
+    window.renderAdmin = renderAdmin = function(){
+      previousRenderAdmin2049();
+      try { ensureTournamentNameField(); } catch(e) {}
+    };
+  }
+
+  function loadLogo(){
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = 'club-logo.png';
+    });
+  }
+
+  function podiumData(){
+    return typeof window.getPodiumData === 'function' ? window.getPodiumData() : null;
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+
+  function fitText(ctx, text, maxWidth, start, min, weight){
+    let size = start;
+    const t = String(text || '-');
+    while (size > min) {
+      ctx.font = (weight || '900') + ' ' + size + 'px Arial, sans-serif';
+      if (ctx.measureText(t).width <= maxWidth) return size;
+      size -= 2;
+    }
+    return size;
+  }
+
+  function drawTextFit(ctx, text, x, y, maxWidth, start, min){
+    const size = fitText(ctx, text, maxWidth, start, min, '950');
+    ctx.font = '950 ' + size + 'px Arial, sans-serif';
+    let t = String(text || '-');
+    while (ctx.measureText(t).width > maxWidth && t.length > 5) t = t.slice(0, -2) + '…';
+    ctx.fillText(t, x, y);
+  }
+
+  function medalCircle(ctx, x, y, r, color, number, label){
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.25)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 12;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(x,y,r-7,0,Math.PI*2); ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#001f4d';
+    ctx.font = '950 ' + (r*1.05) + 'px Arial, sans-serif';
+    ctx.fillText(number, x, y + r*.35);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 26px Arial, sans-serif';
+    ctx.fillText(label, x, y + r + 36);
+  }
+
+  function podiumColumn(ctx, x, baseY, w, h, color, num, label, name){
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.22)';
+    ctx.shadowBlur = 26;
+    ctx.shadowOffsetY = 16;
+    ctx.fillStyle = color;
+    roundRect(ctx,x,baseY-h,w,h,32); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,255,255,.24)';
+    roundRect(ctx,x+14,baseY-h+14,w-28,h-28,22); ctx.fill();
+
+    medalCircle(ctx, x+w/2, baseY-h-68, 62, color, num, label);
+
+    ctx.textAlign='center';
+    ctx.fillStyle='#001f4d';
+    drawTextFit(ctx, name || '-', x+w/2, baseY-h+105, w-44, 40, 22);
+
+    ctx.font='900 28px Arial, sans-serif';
+    ctx.fillStyle='#002b5c';
+    ctx.fillText(label, x+w/2, baseY-38);
+  }
+
+  window.exportPodiumPng = async function(){
+    const p = podiumData();
+    if (!p) { alert('Podium non disponible : termine la finale principale.'); return; }
+
+    const title = getTournamentTitle();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1400; canvas.height = 1400;
+    const ctx = canvas.getContext('2d');
+
+    const bg = ctx.createLinearGradient(0,0,1400,1400);
+    bg.addColorStop(0,'#001f4d'); bg.addColorStop(.44,'#004b9b'); bg.addColorStop(.80,'#0b5bbb'); bg.addColorStop(1,'#ffcf22');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,1400,1400);
+
+    function glow(x,y,r,c){ const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,c); g.addColorStop(1,'rgba(255,255,255,0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+    glow(220,210,420,'rgba(255,207,34,.28)'); glow(1120,1120,520,'rgba(255,255,255,.16)');
+
+    ctx.strokeStyle='rgba(255,255,255,.07)'; ctx.lineWidth=3;
+    for(let i=-300;i<1650;i+=90){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+560,1400); ctx.stroke(); }
+
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.30)'; ctx.shadowBlur=44; ctx.shadowOffsetY=24;
+    ctx.fillStyle='rgba(255,255,255,.95)';
+    roundRect(ctx,80,80,1240,1240,54); ctx.fill();
+    ctx.restore();
+
+    const logo = await loadLogo();
+    if (logo) {
+      ctx.save(); ctx.globalAlpha=.10; ctx.drawImage(logo,455,420,490,490); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.arc(700,180,78,0,Math.PI*2); ctx.clip(); ctx.fillStyle='#fff'; ctx.fillRect(622,102,156,156); ctx.drawImage(logo,622,102,156,156); ctx.restore();
+    }
+
+    ctx.textAlign='center';
+    ctx.fillStyle='#002b5c'; ctx.font='950 44px Arial, sans-serif'; ctx.fillText('CSM VOLLEYBALL 91',700,305);
+    ctx.fillStyle='#0b5bbb'; drawTextFit(ctx, title.toUpperCase(), 700, 390, 1060, 68, 38);
+    ctx.fillStyle='#ffcf22'; roundRect(ctx,445,425,510,12,6); ctx.fill();
+    ctx.fillStyle='#002b5c'; ctx.font='950 64px Arial, sans-serif'; ctx.fillText('PODIUM FINAL',700,510);
+
+    const baseY=1075;
+    podiumColumn(ctx,485,baseY,430,420,'#ffcf22','1','CHAMPION',p.first || '-');
+    podiumColumn(ctx,165,baseY,350,320,'#e2e8f0','2','FINALISTE',p.second || '-');
+    podiumColumn(ctx,885,baseY,350,280,'#fed7aa','3','3E PLACE',p.third || 'Petite finale à terminer');
+
+    ctx.fillStyle='#002b5c'; ctx.font='900 30px Arial, sans-serif'; ctx.fillText('tournoi.csmvolleyball91.fr',700,1210);
+    ctx.fillStyle='#475569'; ctx.font='700 24px Arial, sans-serif'; ctx.fillText(new Date().toLocaleDateString('fr-FR'),700,1254);
+
+    const a = document.createElement('a');
+    a.download = title.toLowerCase().replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'') + '-podium.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  };
+
+  function refreshPodiumLabels(){
+    document.querySelectorAll('.podium-final-card small').forEach(s => {
+      if (/Tableau principal/i.test(s.textContent || '')) s.textContent = getTournamentTitle();
+    });
+  }
+
+  const previousRenderAll2049 = window.renderAll || (typeof renderAll !== 'undefined' ? renderAll : null);
+  if (previousRenderAll2049) {
+    window.renderAll = renderAll = function(){
+      previousRenderAll2049();
+      try { ensureTournamentNameField(); refreshPodiumLabels(); } catch(e) {}
+    };
+  }
+})();
+
+
+// v20.50 - Podium principal + consolante sur le PNG
+(function(){
+  const oldExport = window.exportPodiumPng;
+  if (!oldExport) return;
+
+  function getConsolantePodium(){
+    try{
+      const rows = (window.matches || matches || []);
+      const cons = rows.filter(m =>
+        String(m.bracket||'').toLowerCase().includes('consol') &&
+        String(m.status||'').toLowerCase()==='done'
+      );
+
+      const finale = cons.find(m => String(m.round||'').toLowerCase().includes('final'));
+      if(!finale || !finale.winner) return null;
+
+      const second = finale.team_a===finale.winner ? finale.team_b : finale.team_a;
+
+      const petite = cons.find(m =>
+        String(m.round||'').toLowerCase().includes('3e') ||
+        String(m.round||'').toLowerCase().includes('petite')
+      );
+
+      const third = petite && petite.winner ? petite.winner : null;
+
+      return {
+        first: finale.winner,
+        second: second,
+        third: third
+      };
+    }catch(e){ return null; }
+  }
+
+  window.getConsolantePodium = getConsolantePodium;
+})();
