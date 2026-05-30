@@ -6879,3 +6879,123 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+/* v20.33 - Backup JSON + bandeau état tournoi */
+(function(){
+  window.CSM_BUILD = 'v20.33-backup-etat-tournoi';
+
+  function statusLowerV2033(m){ return String((m && m.status) || '').toLowerCase().trim(); }
+  function isDoneV2033(m){ return ['done','completed','finished','closed','termine','terminé'].includes(statusLowerV2033(m)); }
+  function isLiveV2033(m){ const s = statusLowerV2033(m); return ['live','active','in_progress','started','ongoing','running','en_cours','en cours','in progress','launched','lance','lancé','saisie'].includes(s) || s.includes('cours') || s.includes('progress'); }
+  function isRealMatchV2033(m){
+    const a = String((m && m.team_a) || '').trim();
+    const b = String((m && m.team_b) || '').trim();
+    return !!(m && a && b && a !== 'À définir' && b !== 'À définir' && a !== 'A définir' && b !== 'A définir');
+  }
+  function getPhaseRowsV2033(phase){ return (matches || []).filter(function(m){ return m.phase === phase && isRealMatchV2033(m); }); }
+  function currentPhaseV2033(){
+    if (typeof currentPhaseName === 'function') return currentPhaseName();
+    const live = (matches || []).find(function(m){ return isLiveV2033(m) && isRealMatchV2033(m); });
+    if (live) return live.phase || 'Phase en cours';
+    const next = (matches || []).find(function(m){ return !isDoneV2033(m) && isRealMatchV2033(m); });
+    return next ? (next.phase || 'Phase en cours') : 'Tournoi terminé';
+  }
+  function phaseLabelV2033(phase){
+    if (!phase) return '-';
+    if (String(phase).includes('Tableau') || String(phase).includes('Consolante')) return 'Tableaux';
+    return phase;
+  }
+  function nextActionV2033(phase){
+    const live = (matches || []).filter(function(m){ return isLiveV2033(m) && isRealMatchV2033(m); });
+    if (live.length) return live.length + ' match' + (live.length > 1 ? 's' : '') + ' en cours';
+
+    const b1 = getPhaseRowsV2033('Brassage 1');
+    const b2 = getPhaseRowsV2033('Brassage 2');
+    const bracket = (matches || []).filter(function(m){ return m.bracket || m.phase === 'Tableau principal' || m.phase === 'Consolante'; });
+    const b1Done = b1.length && b1.every(isDoneV2033);
+    const b2Done = b2.length && b2.every(isDoneV2033);
+
+    if (phase === 'Brassage 1' && b1Done && !b2.length) return 'générer Brassage 2';
+    if (phase === 'Brassage 2' && b2Done && !bracket.length) return 'générer Tableaux';
+    const next = (matches || []).filter(function(m){ return !isDoneV2033(m) && !isLiveV2033(m) && isRealMatchV2033(m); })[0];
+    if (next) return 'lancer prochain match';
+    return 'tournoi terminé';
+  }
+  function phaseProgressV2033(phase){
+    const rows = getPhaseRowsV2033(phase);
+    const done = rows.filter(isDoneV2033).length;
+    return { done: done, total: rows.length };
+  }
+  window.renderTournamentStatusBanner = function(){
+    const meta = document.getElementById('dashPhaseMeta');
+    if (!meta || !settings) return;
+    const phase = currentPhaseV2033();
+    const progress = phaseProgressV2033(phase);
+    const courts = Number(settings && settings.courts_count ? settings.courts_count : 6) || 6;
+    const action = nextActionV2033(phase);
+    let existing = document.getElementById('tournamentStateLine');
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'tournamentStateLine';
+      existing.className = 'tournament-state-line';
+      meta.appendChild(existing);
+    }
+    existing.innerHTML = '<b>' + phaseLabelV2033(phase) + '</b> : ' + progress.done + '/' + progress.total + ' matchs terminés' +
+      ' · ' + courts + ' terrains' +
+      ' · prochaine action : <b>' + action + '</b>';
+  };
+
+  window.exportTournamentBackup = async function(){
+    try {
+      const payload = {
+        exported_at: new Date().toISOString(),
+        build: window.CSM_BUILD || 'unknown',
+        settings: settings || null,
+        teams: teams || [],
+        matches: matches || []
+      };
+      const text = JSON.stringify(payload, null, 2);
+      const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const d = new Date();
+      const stamp = d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0') + '_' + String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'backup_tournoi_csm_' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    } catch (e) {
+      alert('Export backup impossible : ' + (e && e.message ? e.message : e));
+    }
+  };
+
+  window.ensureBackupExportButton = function(){
+    const panel = document.getElementById('adminPanel');
+    if (!panel || document.getElementById('backupExportCard')) return;
+    const hero = panel.querySelector('.admin-hero-card');
+    const card = document.createElement('div');
+    card.id = 'backupExportCard';
+    card.className = 'admin-hero-card backup-export-card';
+    card.innerHTML = '<div><p class="eyebrow dark">Sécurité</p><h3>Backup tournoi</h3><p class="small">Exporte settings, équipes et matchs en JSON avant une phase ou une grosse manipulation.</p></div>' +
+      '<button class="admin-big-action" type="button" onclick="exportTournamentBackup()">Exporter backup JSON</button>';
+    if (hero && hero.parentNode) hero.parentNode.insertBefore(card, hero.nextSibling);
+    else panel.insertBefore(card, panel.firstChild);
+  };
+
+  const previousRenderAll = window.renderAll || renderAll;
+  window.renderAll = renderAll = function(){
+    previousRenderAll();
+    try { renderTournamentStatusBanner(); } catch(e) { console.warn('status banner', e); }
+    try { ensureBackupExportButton(); } catch(e) { console.warn('backup button', e); }
+  };
+
+  const previousRenderDashboard = window.renderDashboard || renderDashboard;
+  window.renderDashboard = renderDashboard = function(){
+    previousRenderDashboard();
+    try { renderTournamentStatusBanner(); } catch(e) { console.warn('status banner', e); }
+  };
+
+  console.log(window.CSM_BUILD);
+})();
