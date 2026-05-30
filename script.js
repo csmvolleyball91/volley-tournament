@@ -7908,3 +7908,18 @@ function renderBrackets() {
 
   console.log(window.CSM_BUILD);
 })();
+
+
+// v20.45 Podium auto
+function getPodiumData(){
+ try{
+   const finals=(window.matches||[]).filter(m=>String(m.round||'').toLowerCase().includes('final'));
+   const finale=finals.find(m=>!String(m.round||'').toLowerCase().includes('petite'));
+   const petite=finals.find(m=>String(m.round||'').toLowerCase().includes('petite'));
+   if(!finale||!finale.winner) return null;
+   const first=finale.winner;
+   const second=finale.team_a===first?finale.team_b:finale.team_a;
+   const third=petite&&petite.winner?petite.winner:null;
+   return {first,second,third};
+ }catch(e){return null;}
+}
